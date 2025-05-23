@@ -8,7 +8,7 @@ import ttboard.util.platform as platform
 
 def setup(tt:DemoBoard):
     
-    if tt.shuttle.run != 'tt07' or tt.shuttle.run != 'tt09' or tt.shuttle.run != 'ttihp0p2' or or tt.shuttle.run != 'ttihp25a':
+    if tt.shuttle.run != 'tt07' and tt.shuttle.run != 'tt09' and tt.shuttle.run != 'ttihp0p2' and tt.shuttle.run != 'ttihp25a':
         log.error(f"Z80 isn't actually on shuttle {tt.shuttle.run}, sorry!")
         return False
     
