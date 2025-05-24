@@ -13,37 +13,6 @@ from examples.tt_um_rejunity_z80.z80 import Z80
 from examples.tt_um_rejunity_z80.setup import setup
 import ttboard.util.time as time 
 
-# ascii_to_7seg = {
-#     '0': 0b1111110,
-#     '1': 0b0110000,
-#     '2': 0b1101101,
-#     '3': 0b1111001,
-#     '4': 0b0110011,
-#     '5': 0b1011011,
-#     '6': 0b1011111,
-#     '7': 0b1110000,
-#     '8': 0b1111111,
-#     '9': 0b1111011,
-#     'A': 0b1110111,
-#     'b': 0b0011111,
-#     'C': 0b1001110,
-#     'c': 0b0001101,
-#     'd': 0b0111101,
-#     'E': 0b1001111,
-#     'F': 0b1000111,
-#     '-': 0b0000001,
-#     ' ': 0b0000000,
-#     '_': 0b0001000,
-#     '=': 0b0001001,
-#     'H': 0b0110111,
-#     'L': 0b0001110,
-#     'l': 0b0000110, # *
-#     'o': 0b0001111, # *
-#     'P': 0b1100111,
-#     'r': 0b0000101, # *
-#     'U': 0b0111110
-# }
-
 # 7 segment display
 #   a
 #  f b
@@ -140,30 +109,3 @@ def hello(delay=500):
     z80.set_mux_addr_hi()
 
     print7(z80, "01234567890 . . . Z80 HELLO Uorld. . . Z80! ! ! Z80 HELLO Uorld. . .", art=ascii_to_7seg, delay=delay)
-    # tt = DemoBoard.get()
-    # if not setup(tt):
-    #     return False 
-    
-    # z80 = Z80(tt)
-    # z80.set_mux_addr_hi()
-
-    # def display(symbol):
-    #     z80.data = 0xC3 # JP nnnn, nn should appear on the address bus and on the TT board 7-segment LED display
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     z80.data = ascii_to_7seg[symbol]
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     z80.data = ascii_to_7seg[symbol]
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-    #     tt.clock_project_once(msDelay=100)
-
-    # while True:
-    #     for s in ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']:
-    #         display(s)
-    #     time.sleep_ms(1000) 
-
