@@ -31,6 +31,13 @@ class Z80:
         self._nmi = 0
         self._busrq = 0
 
+
+    def dump(self):
+        print(f"(out) ADDR:{self.addr:04x} " +
+            f"M1:{int(self.M1)} MREQ:{int(self.MREQ)} RD:{int(self.RD)} WR:{int(self.WR)} IORQ:{int(self.IORQ)} HALT:{int(self.HALT)}" +
+            f"(in) WAIT:{int(self.WAIT)} INT:{int(self.INT)} NMI:{int(self.NMI)} " +
+            f"| BUSRQ:{int(self.BUSRQ)}/BUSAK:{int(self.BUSAK)} RFSH:{int(self.RFSH)}")
+
     def set_mux_to_ctrl(self):
         self.tt.ui_in[7] = 1
 
