@@ -55,82 +55,79 @@ class Z80:
 
     @property
     def data(self):
-        # return self.tt.bidir_byte
         return self.tt.uio_out
     @data.setter 
-    def data(self, set_to:int):
-        # self.tt.bidir_byte = set_to
-        self.tt.uio_in = set_to
+    def data(self, value:int):
+        self.tt.uio_in = value
 
     @property
     def WAIT(self):
         return self._wait
     @WAIT.setter 
-    def wait(self, set_to:bool):
-        self.tt.pins.ui_in0 = ~set_to
-        self._wait = ~set_to
+    def WAIT(self, flag:bool):
+        self.tt.ui_in[0] = not flag
+        self._wait = flag
 
     @property
     def INT(self):
         return self._int
     @INT.setter 
-    def INT(self, set_to:bool):
-        self.tt.pins.ui_in1 = ~set_to
-        self._int = ~set_to
+    def INT(self, flag:bool):
+        self.tt.ui_in[1] = not flag
+        self._int = flag
 
     @property
     def NMI(self):
         return self._nmi
     @NMI.setter 
-    def NMI(self, set_to:bool):
-        self.tt.pins.ui_in2 = ~set_to
-        self._nmi = ~set_to
+    def NMI(self, flag:bool):
+        self.tt.ui_in[2] = not flag
+        self._nmi = flag
 
     @property
     def BUSRQ(self):
         return self._busrq
     @BUSRQ.setter 
-    def BUSRQ(self, set_to:bool):
-        self.tt.pins.ui_in3 = ~set_to
-        self._busrq = ~set_to
+    def BUSRQ(self, flag:bool):
+        self.tt.ui_in[3] = not flag
+        self._busrq = flag
 
     @property
     def M1(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out0.value()
+        return not self.tt.uo_out[0]
 
     @property
     def MREQ(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out1.value()
+        return not self.tt.uo_out[1]
 
     @property
     def IORQ(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out2.value()
+        return not self.tt.uo_out[2]
 
     @property
     def RD(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out3.value()
+        return not self.tt.uo_out[3]
 
     @property
     def WR(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out4.value()
+        return not self.tt.uo_out[4]
 
     @property
     def RFSH(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out5.value()
+        return not self.tt.uo_out[5]
 
     @property
     def HALT(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out6.value()
+        return not self.tt.uo_out[6]
 
     @property
     def BUSAK(self):
         self.set_mux_to_ctrl()
-        return ~tt.pins.pin_uo_out7.value()
-
+        return not self.tt.uo_out[7]
