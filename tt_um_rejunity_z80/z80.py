@@ -16,12 +16,7 @@ class Z80:
     '''
     def __init__(self, tt:DemoBoard):
         self.tt = tt 
-        
-        # self.tt.bidir_mode = [Pins.IN, Pins.IN, Pins.IN, Pins.IN, 
-        #                       Pins.IN, Pins.IN, Pins.IN, Pins.IN] # initial DATA bus configution
-        
-        # self.tt.bidir_byte = 0 # NOP instruction by default
-        
+
         tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to read, PICO side is set to write
         tt.uio_in = 0 # NOP instruction by default
 
