@@ -36,13 +36,15 @@ from examples.tt_um_rejunity_z80.setup import setup
 setup(tt) # Activate Z80 project on your TinyTapeout board
 
 from examples.tt_um_rejunity_z80.z80 import Z80
-z80 = Z80(tt)
+z80 = Z80(tt) # Initialize Z80 wrapper
+
 z80.data = 0 # NOP
 print(z80.addr) # prints 0
-z80.clock_project_once()
-z80.clock_project_once()
-z80.clock_project_once()
-z80.clock_project_once()
+tt.clock_project_once() # takes 4 cycles to execute NOP
+tt.clock_project_once() # and advance PC by 1
+tt.clock_project_once()
+tt.clock_project_once()
+tt.clock_project_once() # new PC will be set on adress bus
 print(z80.addr) # prints 1
 
 z80.dump() # prints control signals and address bus
