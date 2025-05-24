@@ -44,5 +44,6 @@ z80.clock_project_once()
 z80.clock_project_once()
 z80.clock_project_once()
 print(z80.addr) # prints 1
-print(z80.M1, z80.MREQ, Z80.RD, Z80.WR)
+
+z80.dump() # prints control signals and address bus
 ```
