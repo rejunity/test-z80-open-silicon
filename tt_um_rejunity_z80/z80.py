@@ -22,7 +22,7 @@ class Z80:
         
         # self.tt.bidir_byte = 0 # NOP instruction by default
         
-        tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to input
+        tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to read, PICO side is set to write
         tt.uio_in = 0 # NOP instruction by default
 
         self.tt.ui_in = 0b0000_1111 # set /WAIT, /INT, /NMI, /BUSRQ (inverted)
@@ -31,12 +31,13 @@ class Z80:
         self._nmi = 0
         self._busrq = 0
 
-
     def dump(self):
-        print(f"(out) ADDR:{self.addr:04x} " +
-            f"M1:{int(self.M1)} MREQ:{int(self.MREQ)} RD:{int(self.RD)} WR:{int(self.WR)} IORQ:{int(self.IORQ)} HALT:{int(self.HALT)}" +
-            f"(in) WAIT:{int(self.WAIT)} INT:{int(self.INT)} NMI:{int(self.NMI)} " +
-            f"| BUSRQ:{int(self.BUSRQ)}/BUSAK:{int(self.BUSAK)} RFSH:{int(self.RFSH)}")
+        preserve_mux = self.tt.ui_in[7:6]
+        print(f"(out) ADDR:{self.addr:04x}" +
+            f" M1:{int(self.M1)} MREQ:{int(self.MREQ)} RD:{int(self.RD)} WR:{int(self.WR)} IORQ:{int(self.IORQ)} HALT:{int(self.HALT)}" +
+            f" (in) WAIT:{int(self.WAIT)} INT:{int(self.INT)} NMI:{int(self.NMI)}" +
+            f" | BUSRQ:{int(self.BUSRQ)}/BUSAK:{int(self.BUSAK)} RFSH:{int(self.RFSH)}")
+        self.tt.ui_in[7:6] = preserve_mux
 
     def set_mux_to_ctrl(self):
         self.tt.ui_in[7] = 1
