@@ -46,6 +46,15 @@ class Z80:
     @property
     def addr(self):
         self.set_mux_addr_hi()
+        hi = int(self.tt.uo_out) # NOTE: it is important to convert to int() immediately here in order
+                                 #       to derefernce uo_out and force-read the value of the pins
+        self.set_mux_addr_lo()
+        lo = int(self.tt.uo_out)
+        return hi*256 + lo
+
+    @property
+    def addr_wait(self):
+        self.set_mux_addr_hi()
         wait_clocks(1)
         hi = int(self.tt.uo_out) # NOTE: it is important to convert to int() immediately here in order
                                  #       to derefernce uo_out and force-read the value of the pins
