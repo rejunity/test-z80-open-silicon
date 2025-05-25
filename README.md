@@ -19,11 +19,19 @@ mpremote reset
 mpremote
 ```
 
-Once connection initiated type:
+Once connection initiated, type:
 ```
 import examples.tt_um_rejunity_z80.demo as demo
 
 demo.hello()
+
+```
+
+Couple of other small programs included:
+```
+demo.prog_rom() # RP2040 emulates ROM, flashes LED with text
+
+demo.prog_ram() # RP2040 emulates RAM, pushes vales on stack and prints them in mpremote console
 
 ```
 
