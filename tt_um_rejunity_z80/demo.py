@@ -114,3 +114,101 @@ def hello(delay=500):
     z80.set_mux_addr_hi()
 
     print7(z80, "01234567890 _-^ Z80 HELLO Uorld. . . Z80 _-^ Z80 HEllo Uorld. . . Z80 _-^ Z8o hcllo uorld. . . _-^Z80^-_ .", art=ascii_to_7seg, delay=delay)
+
+
+NOP         = 0x00
+LD_BC_nnnn  = 0x01
+LD_DE_nnnn  = 0x11
+LD_HL_nnnn  = 0x21
+LD_SP_nnnn  = 0x31
+POP_BC      = 0xC1
+POP_DE      = 0xD1
+POP_HL      = 0xE1
+POP_AF      = 0xF1
+PUSH_BC     = 0xC5
+PUSH_DE     = 0xD5
+PUSH_HL     = 0xE5
+PUSH_AF     = 0xF5
+JP_nnnn     = 0xC3
+RET         = 0xC9
+def op(opcodes):
+    if isinstance(opcodes, int):
+        opcodes = [opcodes]
+    return bytearray(opcodes)
+def op_LD_nnnn(reg, hi, lo=-1):
+    if lo < 0:
+        lo = hi %  0x100
+        hi = hi // 0x100
+    # TODO: IX/IY
+    opcode = {"BC":LD_BC_nnnn,"DE":LD_DE_nnnn,"HL":LD_HL_nnnn,"SP":LD_SP_nnnn}[reg.upper()]
+    return op([opcode, lo, hi])
+def op_JP_nnnn(hi, lo=-1):
+    if lo < 0:
+        lo = hi %  0x100
+        hi = hi // 0x100
+    return op([JP_nnnn, lo, hi])
+
+def prog_rom(delay=1, direct=True, verbose=False):
+    tt = DemoBoard.get()
+    if not setup(tt):
+        return False 
+    
+    z80 = Z80(tt)
+    z80.set_mux_addr_hi()
+
+    text = "Z8o HELLO uorld."
+    code = bytearray()
+    jp_len = len(op_JP_nnnn(0))
+    for c in text:
+        assert len(code) < 256
+        code += op_JP_nnnn(hi=ascii_to_7seg[c], lo=len(code)+jp_len)
+    print(code)
+    assert len(code) == len(text)*jp_len
+
+    if direct:
+        while True:
+            tt.ui_in = 0b0000_1111 # mux lo addr
+            rom_addr = tt.uo_out.value.to_unsigned()
+            tt.ui_in = 0b0100_1111 # mux hi addr
+            if rom_addr >= len(code):
+                break
+            z80.data = code[rom_addr]
+            tt.clock_project_once(msDelay=delay)
+    else:
+        while True:
+            if verbose:
+                z80.dump()
+
+            rom_addr = z80.addr & 0xFF
+            z80.set_mux_addr_hi()
+            if rom_addr >= len(code):
+                break
+            z80.data = code[rom_addr]
+            tt.clock_project_once(msDelay=delay)
+
+    tt.clock_project_once()
+
+
+    # while True:
+    #     # if type == 0:
+    #     #     tt.ui_in[6] = 0
+    #     #     rom_addr = int(tt.uo_out)
+    #     #     tt.ui_in[6] = 1
+    #     # elif type == 1:
+    #     #     rom_addr = z80.addr & 0xFF
+    #     # else:
+    #     #     rom_addr = z80.addr_wait & 0xFF
+    #     # z80.set_mux_addr_hi()
+    #     # if rom_addr >= len(code):
+    #         # break
+    #     tt.ui_in[6] = 0
+    #     rom_addr = int(tt.uo_out)
+    #     tt.ui_in[6] = 1
+    #     z80.data = code[rom_addr]
+    #     # tt.clock_project_once(msDelay=delay)
+    #     tt.clock_project_once()
+    #     # if verbose:
+    #     #     # print(rom_addr, code[rom_addr])
+    #     #     z80.dump()
+    # tt.clock_project_once()
+
