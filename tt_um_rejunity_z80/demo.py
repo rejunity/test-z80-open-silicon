@@ -113,4 +113,4 @@ def hello(delay=500):
     z80 = Z80(tt)
     z80.set_mux_addr_hi()
 
-    print7(z80, "01234567890 _-^ Z8o HELLO Uorld. . . Z8o _-^ Z8o HEllo Uorld. . . Z8o _-^ Z8o hcllo uorld. . . _-^Z8o^-_ Z", art=ascii_to_7seg, delay=delay)
+    print7(z80, "01234567890 _-^ Z80 HELLO Uorld. . . Z80 _-^ Z80 HEllo Uorld. . . Z80 _-^ Z8o hcllo uorld. . . _-^Z80^-_ .", art=ascii_to_7seg, delay=delay)
