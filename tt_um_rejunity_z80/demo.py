@@ -148,7 +148,7 @@ def op_JP_nnnn(hi, lo=-1):
         hi = hi // 0x100
     return op([JP_nnnn, lo, hi])
 
-def prog_rom(delay=1, direct=True, verbose=False):
+def prog_rom(delay=100, direct=True, verbose=False):
     tt = DemoBoard.get()
     if not setup(tt):
         return False 
@@ -212,3 +212,52 @@ def prog_rom(delay=1, direct=True, verbose=False):
     #     #     z80.dump()
     # tt.clock_project_once()
 
+
+def prog_ram(delay=1, verbose=False):
+    tt = DemoBoard.get()
+    if not setup(tt):
+        return False 
+    
+    z80 = Z80(tt)
+
+    code = bytearray()
+    code += op_LD_nnnn("BC", 0xCAFE)
+    code += op_LD_nnnn("DE", 0xDECF)
+    code += op_LD_nnnn("HL", 0x1337)
+    code += op_LD_nnnn("SP", 0x0000)
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_BC)
+    code += op(PUSH_DE)
+    code += op(RET)
+
+    print(code)
+
+    ram = bytearray(0x100)
+    for n in range(len(code)):
+        ram[n] = code[n]
+
+    while True:
+        if verbose:
+            z80.dump()
+
+        ram_addr = z80.addr % len(ram)
+
+        if z80.WR and z80.MREQ:
+            tt.uio_oe_pico = 0
+            ram[ram_addr] = z80.data
+            print(f"{int(z80.data):02x} -> [{z80.addr:04x}]")
+        else:
+            if z80.M1 and ram[ram_addr] == RET:
+                break
+            tt.uio_oe_pico = 255
+            if z80.RD and z80.MREQ:
+                z80.data = ram[ram_addr]
+                print(f"      [{z80.addr:04x}] {'=' if z80.M1 else '-'}> {int(z80.data):02x}")
+        tt.clock_project_once(msDelay=delay)
+    assert ram[-16:] == bytearray([0,0,0,0, 0xCF,0xDE, 0xFE,0xCA,   0x37,0x13, 0x37,0x13, 0x37,0x13, 0x37,0x13])
+
+    # print(ram[0x1_0000-16:0x1_0000-1])
+    print("RAM 0xE0..0xFF: ", [hex(x) for x in ram[-16:]])
