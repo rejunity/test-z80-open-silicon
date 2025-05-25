@@ -43,6 +43,13 @@ class Z80:
     def set_mux_addr_lo(self):
         self.tt.ui_in[7:6] = 0b00
 
+    def update_data_bus_direction_on_pico(self):
+        if self.WR:
+            assert self.RD == False, "both RD and WR signals are activated simultaneously!"
+            tt.uio_oe_pico.value = 0
+        else:
+            tt.uio_oe_pico.value = 255
+
     @property
     def addr(self):
         self.set_mux_addr_hi()
