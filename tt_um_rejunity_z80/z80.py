@@ -27,23 +27,21 @@ class Z80:
         self._busrq = 0
 
     def dump(self):
-        preserve_mux = self.tt.ui_in[7:6]
+        save_mux = self.tt.ui_in[7:6]
         print(f"(out) ADDR:{self.addr:04x}" +
             f" M1:{int(self.M1)} MREQ:{int(self.MREQ)} RD:{int(self.RD)} WR:{int(self.WR)} IORQ:{int(self.IORQ)} HALT:{int(self.HALT)}" +
             f" (in) WAIT:{int(self.WAIT)} INT:{int(self.INT)} NMI:{int(self.NMI)}" +
             f" | BUSRQ:{int(self.BUSRQ)}/BUSAK:{int(self.BUSAK)} RFSH:{int(self.RFSH)}")
-        self.tt.ui_in[7:6] = preserve_mux
+        self.tt.ui_in[7:6] = save_mux
 
     def set_mux_to_ctrl(self):
         self.tt.ui_in[7] = 1
 
     def set_mux_addr_hi(self):
-        self.tt.ui_in[6] = 1
-        self.tt.ui_in[7] = 0
+        self.tt.ui_in[7:6] = 0b01
 
     def set_mux_addr_lo(self):
-        self.tt.ui_in[6] = 0
-        self.tt.ui_in[7] = 0
+        self.tt.ui_in[7:6] = 0b00
 
     @property
     def addr(self):
