@@ -6,9 +6,9 @@ This is a testing code for [FOSS Z80 silicon](https://github.com/rejunity/z80-op
 
 NOTE: this all assumes you're running a Tiny Tapeout 7 demoboard, with [the SDK](https://github.com/TinyTapeout/tt-micropython-firmware/) and [MicroPython](https://www.micropython.org) installed.
 
-On a host machine you will need [mpremote](https://docs.micropython.org/en/latest/reference/mpremote.html) tool that usually comes with MicroPython installation. Older `mpremote` versions have a bit funky behavior, so you might need to upgrade it to _1.24.1_ or later version!
+On a host machine you will need [mpremote](https://docs.micropython.org/en/latest/reference/mpremote.html) tool that usually comes with MicroPython installation. Older *mpremote* versions have a bit funky behavior, so you might need to upgrade it to _1.24.1_ or later version!
 
-If `mpremote` is missing on your host machine, install it with:
+If *mpremote* is missing on your host machine, install it with:
 ```
 pip install mpremote
 ```
@@ -41,7 +41,11 @@ Couple of other small programs included:
 demo.prog_rom() # RP2040 emulates ROM, flashes LED with text
 
 demo.prog_ram() # RP2040 emulates RAM, pushes vales on stack and prints them in the mpremote console
+```
 
+Expected results in the *mpremote* console after running `demo.prog_ram()`:
+```
+RAM 0xE0..0xFF:  ['0x0', '0x0', '0x0', '0x0', '0xcf', '0xde', '0xfe', '0xca', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13']
 ```
 
 
