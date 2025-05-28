@@ -2,6 +2,11 @@
 
 This is a testing code for [FOSS Z80 silicon](https://github.com/rejunity/z80-open-silicon) on [Tiny Tapeout 07](https://tinytapeout.com/runs/tt07). Tests are written in MicroPython and will run from the RP2040 microcontroller situated on the Tiny Tapeout base board.
 
+<p align="center">
+  <img width="200" src="./assets/z80-hello-world.gif"/>
+</p>
+
+
 ## Requirements
 
 NOTE: this all assumes you're running a Tiny Tapeout 7 demoboard, with [the SDK](https://github.com/TinyTapeout/tt-micropython-firmware/) and [MicroPython](https://www.micropython.org) installed.
