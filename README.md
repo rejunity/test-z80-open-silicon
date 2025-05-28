@@ -48,8 +48,30 @@ Expected results in the *mpremote* console after running `demo.prog_ram()`:
 RAM 0xE0..0xFF:  ['0x0', '0x0', '0x0', '0x0', '0xcf', '0xde', '0xfe', '0xca', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13']
 ```
 
+# Plan
+### Single Tiny Tapeout 07 board
+- [x] $${\color{lightgreen}DONE}$$ **Hello world** using address bus and on board 7-segment display
+- [x] $${\color{lightgreen}DONE}$$ **Hello world** running from **ROM**, ROM emulated by RP2040
+- [x] $${\color{lightgreen}DONE}$$ **RAM test**, RAM emulated by RP2040
+- [ ] Small program (fibonaci sequence?)
+- [x] $${\color{orange}WIP}$$ Exhaustive instruction set test [ZEXALL](https://github.com/agn453/ZEXALL)
+  - [ ] Minimal CP/M environment emulated by RP2040, for inspiration: https://github.com/anotherlin/z80emu
+  - [ ] Intercept `CALL $0005`, write `C`, `DE` registers to RAM at `0..2`
+  - [ ] Intercept `JP $0000` when test is finished
+  - [ ] $${\color{lightgreen}DONE}$$ 16KB is enough to load and execute ZEXALL, if stack is placed at the top `LD SP, $0000`
+  - [ ] Need to implement PIO MircoPython to read DATA and ADDR buses, otherwise ZEXALL will take days, for inspiration: https://github.com/rejunity/test_rejunity_ay8913
+  - [ ] or in C
 
-## Z80 Mircopython API
+### External Hardware
+- [ ] External ROM test
+  - [ ] 3.3V <- 5V voltage level shifter for data bus
+  - [ ] 3.3V -> 5V voltage level shifter for LO 8-bit addreess
+  - [ ] 128 byte ROM and use 1-bit ADDR7 to communicate results back
+- [ ] External RAM test
+  - [ ] 3.3V <-> 5V voltage level shifter for bidirectional data bus
+  - [ ] Multiplexor + 3 buffers to store LO/HI adrress bus and control signals (at least MREQ, RD, WR)
+
+# Z80 Mircopython API
 
 Example use:
 ```
