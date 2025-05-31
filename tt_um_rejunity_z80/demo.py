@@ -121,6 +121,13 @@ LD_BC_nnnn  = 0x01
 LD_DE_nnnn  = 0x11
 LD_HL_nnnn  = 0x21
 LD_SP_nnnn  = 0x31
+LD_mem_A    = 0x32
+LD_A_B      = 0b01_111_000
+LD_A_C      = 0b01_111_001
+LD_A_D      = 0b01_111_010
+LD_A_E      = 0b01_111_011
+LD_A_H      = 0b01_111_100
+LD_A_L      = 0b01_111_101
 POP_BC      = 0xC1
 POP_DE      = 0xD1
 POP_HL      = 0xE1
@@ -142,6 +149,14 @@ def op_LD_nnnn(reg, hi, lo=-1):
     # TODO: IX/IY
     opcode = {"BC":LD_BC_nnnn,"DE":LD_DE_nnnn,"HL":LD_HL_nnnn,"SP":LD_SP_nnnn}[reg.upper()]
     return op([opcode, lo, hi])
+# def op_LD(arg0, arg1, arg2=-1):
+#     if isinstance(arg0, str) and if isinstance(arg1, str):
+
+#     elif isinstance(arg0, str):
+#         return op_LD_nnnn(arg0, arg1, arg2)
+#     elif isinstance(arg1, str):
+#         return op_LD_nnnn(arg0, arg1, arg2)
+
 def op_JP_nnnn(hi, lo=-1):
     if lo < 0:
         lo = hi %  0x100
@@ -261,3 +276,89 @@ def prog_ram(delay=1, verbose=False):
 
     # print(ram[0x1_0000-16:0x1_0000-1])
     print("RAM 0xE0..0xFF: ", [hex(x) for x in ram[-16:]])
+
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm("/hello.com") #verbose=True)
+def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
+    tt = DemoBoard.get()
+    if reboot:
+        if not setup(tt):
+            return False
+
+    z80 = Z80(tt)
+
+    code = bytearray()
+    code += op_JP_nnnn(0x100)           # CALL $0000 jump here - CP/M entree point to warm boot
+    code += op(NOP)
+    code += op(NOP)
+    assert(len(code) == 5)
+    code += op(NOP)                     # CALL $0005 jumps here - CP/M entree point to BDOS
+    code += op(NOP)                     # Keep bytes at address $0006 and $0007 as zero!
+    code += op(NOP)                     # CP/M contains top of the user memory at address $0006
+    code += op(LD_A_D)                  
+    code += op([LD_mem_A, 0x02, 0x00])
+    code += op(LD_A_E)
+    code += op([LD_mem_A, 0x01, 0x00])
+    code += op(LD_A_C)
+    code += op([LD_mem_A, 0x00, 0x00])  # Writing to $0000 triggers handling of BDOS call by emulation environment
+    code += op(RET)
+    assert(len(code) < 0x100)
+
+    # Emulate CP/M bdos CALL 5 functions:
+    #  2 - output character on screen
+    #  9 - output $-terminated string to screen
+    def emulate_bdos(ram):
+        if ram[0] == 2: # print char
+            print(chr(ram[1]), end='')
+        elif ram[0] == 9: # print str terminated by $
+            ptr = ram[2]*256 + ram[1]
+            n = 0
+            while chr(ram[ptr]) != '$' or n > 80: # protect against non-terminated strings
+                print(chr(ram[ptr]), end='')
+                ptr = (ptr + 1) % len(ram)
+                n += 1
+
+    f = open(com_filename, mode='rb')    
+    loaded_code = f.read()
+    f.close()
+
+    ram = bytearray(ram_size)
+    for n in range(len(code)):
+        ram[n] = code[n]
+    for n in range(len(loaded_code)):
+        ram[0x0100+n] = loaded_code[n]
+
+    if verbose:
+        print(ram[0:16])
+        print(ram[0x100:0x120])
+
+    running = False
+    while True:
+        if verbose == "super":
+            z80.dump()
+
+        ram_addr = z80.addr % len(ram)
+
+        if z80.M1:
+            if ram_addr == 0:
+                if running:
+                    break # finished the execution of COM file
+            else:
+                running = True
+
+        # assert z80.WR != z80.RD
+        if z80.WR and z80.MREQ:
+            tt.uio_oe_pico = 0
+            ram[ram_addr] = z80.data
+            if verbose or verbose == "super":
+                print(f"{int(z80.data):02x} -> [{z80.addr:04x}]")
+
+            if ram_addr == 0:
+                emulate_bdos(ram) # emulate the CP/M BDOS
+
+        if z80.RD and z80.MREQ:
+            tt.uio_oe_pico = 255
+            z80.data = ram[ram_addr]
+            if verbose or verbose == "super":
+                print(f"      [{z80.addr:04x}] {'=' if z80.M1 else '-'}> {int(z80.data):02x}")
+
+        tt.clock_project_once()
