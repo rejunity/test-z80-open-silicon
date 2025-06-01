@@ -1,4 +1,4 @@
-# Test FOSS Z80 replica on Tiny Tapeout 07
+# Test FOSSi Z80 replica on Tiny Tapeout 07
 
 This is a testing code for [FOSS Z80 silicon](https://github.com/rejunity/z80-open-silicon) on [Tiny Tapeout 07](https://tinytapeout.com/runs/tt07). Tests are written in MicroPython and will run from the RP2040 microcontroller situated on the Tiny Tapeout base board.
 
@@ -19,51 +19,45 @@ pip install mpremote
 ```
 
 ## Install tests on Tiny Tapeout board
-Connect your Tiny Tapeout 7 demoboard to you host machine via USB cable. Installation basically involves copying over the `tt_um_rejunity_z80` directory onto the micropython file system under `examples/` situated on a Tiny Tapeout 7 demoboard and accessbile to RP2040 microcontroller.
+Installation basically involves copying over the `tt_um_rejunity_z80` directory onto the micropython file system under `examples/` situated on a Tiny Tapeout 7 demoboard and accessbile to RP2040 microcontroller. Connect your Tiny Tapeout 7 demoboard to you host machine via USB cable and type:
 
 ```
 mpremote cp -r tt_um_rejunity_z80 :/examples/
+mpremote cp -r programs/*.com :/
+mpremote reset
 ```
 
 ## Run
 
-Connect to your board from the host machine:
+Connect to MicroPython running on your Tiny Tapeout board from the host machine:
 ```
-mpremote reset
 mpremote
 ```
 
-Once connection initiated, type:
+Once *mpremote* initiaites the connection, type:
 ```
 import examples.tt_um_rejunity_z80.demo as demo
 
 demo.hello()
-
 ```
 
-Couple of other small programs included:
+To load Z80 `.com` programs in the tiniest CP/M environment, type:
 ```
-demo.prog_rom() # RP2040 emulates ROM, flashes LED with text
-
-demo.prog_ram() # RP2040 emulates RAM, pushes vales on stack and prints them in the mpremote console
-```
-
-Expected results in the *mpremote* console after running `demo.prog_ram()`:
-```
-RAM 0xE0..0xFF:  ['0x0', '0x0', '0x0', '0x0', '0xcf', '0xde', '0xfe', '0xca', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13']
+demo.cpm("/hello.com")
 ```
 
 # Plan
 ### Single Tiny Tapeout 07 board
-- [x] $${\color{lightgreen}DONE}$$ **Hello world** using address bus and on board 7-segment display
-- [x] $${\color{lightgreen}DONE}$$ **Hello world** running from **ROM**, ROM emulated by RP2040
-- [x] $${\color{lightgreen}DONE}$$ **RAM test**, RAM emulated by RP2040
+- [x] **Hello world** using address bus and on board 7-segment display
+- [x] **Hello world** running from **ROM**, ROM emulated by RP2040
+- [x] **RAM test**, RAM emulated by RP2040
+- [x] **Hello world** printed to the console, tiny CP/M environment emulated by RP2040
 - [ ] Small program (fibonaci sequence?)
-- [x] $${\color{orange}WIP}$$ Exhaustive instruction set test [ZEXALL](https://github.com/agn453/ZEXALL)
-  - [ ] Minimal CP/M environment emulated by RP2040, for inspiration: https://github.com/anotherlin/z80emu
-  - [ ] Intercept `CALL $0005`, write `C`, `DE` registers to RAM at `0..2`
-  - [ ] Intercept `JP $0000` when test is finished
-  - [ ] $${\color{lightgreen}DONE}$$ 16KB is enough to load and execute ZEXALL, if stack is placed at the top `LD SP, $0000`
+- [ ] Exhaustive instruction set test [ZEXALL](https://github.com/agn453/ZEXALL)
+  - [x] Minimal CP/M environment emulated by RP2040, for inspiration: https://github.com/anotherlin/z80emu
+  - [x] Intercept `CALL $0005`, write `C`, `DE` registers to RAM at `0..2`
+  - [x] Intercept `JP $0000` when test is finished
+  - [x] 16KB is enough to load and execute ZEXALL, if stack is placed at the top `LD SP, $0000`
   - [ ] Need to implement PIO MircoPython to read DATA and ADDR buses, otherwise ZEXALL will take days, for inspiration: https://github.com/rejunity/test_rejunity_ay8913
   - [ ] or in C
 
@@ -97,3 +91,15 @@ print(z80.addr) # prints 1
 
 z80.dump() # prints control signals and address bus
 ```
+
+## Other small tests included
+```
+import examples.tt_um_rejunity_z80.demo as demo
+demo.prog_rom() # RP2040 emulates ROM, flashes LED with text
+demo.prog_ram() # RP2040 emulates RAM, pushes vales on stack and prints them in the mpremote console
+```
+Expected results in the *mpremote* console after running `demo.prog_ram()`:
+```
+RAM 0xE0..0xFF:  ['0x0', '0x0', '0x0', '0x0', '0xcf', '0xde', '0xfe', '0xca', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13', '0x37', '0x13']
+```
+
