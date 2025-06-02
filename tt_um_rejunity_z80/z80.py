@@ -7,7 +7,331 @@ log = logging.getLogger(__name__)
 def wait_clocks(num:int=1):
     for _i in range(num):
         time.sleep_us(1)
+
+
+from machine import Pin
+import rp2
+from rp2 import PIO
+
+
+# https://github.com/TinyTapeout/tt-micropython-firmware/blob/main/src/ttboard/pins/gpio_map.py
+# class GPIOMapTT06(GPIOMapBase):
+#     RP_PROJCLK = 0
+#     PROJECT_nRST = 1
+#     CTRL_SEL_nRST = 2
+#     CTRL_SEL_INC = 3
+#     CTRL_SEL_ENA = 4
+#     UO_OUT0 = 5
+#     UO_OUT1 = 6
+#     UO_OUT2 = 7
+#     UO_OUT3 = 8
+#     UI_IN0 = 9
+#     UI_IN1 = 10
+#     UI_IN2 = 11
+#     UI_IN3 = 12
+#     UO_OUT4 = 13
+#     UO_OUT5 = 14
+#     UO_OUT6 = 15 
+#     UO_OUT7 = 16
+#     UI_IN4  = 17
+#     UI_IN5  = 18
+#     UI_IN6  = 19
+#     UI_IN7  = 20
+#     UIO0 = 21
+#     UIO1 = 22
+#     UIO2 = 23
+#     UIO3 = 24
+#     UIO4 = 25
+#     UIO5 = 26
+#     UIO6 = 27
+#     UIO7 = 28
+#     RPIO29 = 29
+
+#
+# Ok the AY8913 register writer
+# this thing is a little pio program that does some fancy footwork
+# to get around the fact that our chip input pins are split up 
+# into 2 blocks
+#  CHIPIN_LOW_NIBBLE  CHIPOUT_HIGH_NIBBLE  CHIPIN_HIGHNIBBLE
+# so we define the pio output (which talks to the chip input) as a 12 bit thing
+# then do some magic Mike dance using the ISR as a swap space, to finally 
+# get our outputs right and ready for the chip input pins.
+# This is done twice, so we latch the register, then the value
+# appropriately, by using the side-set stuff (thankfully, those two 
+# bidir pins are sequential).
+# The state machine runs at 2MHz no problem, but if the program here is 
+# optimized a bit, might need to tweak.
+
+#
+# ->Z80 |       | /wait |       |  mux  |    data-in    |
+# TinyT | 4 uo  | 4 ui  | 4 uo  | 4 ui  |     8 uio     |
+#       |0 1 2 3|0 1 2 3|4 5 6 7|4 5 6 7|0 1 2 3 4 5 6 7|
+# Z80-> | addr  |       | addr  |       |    data-out   |
+# ------+-------+-------+-------+-------+---------------+
+# Pico  |5 6 7 8|9 0 1 2|3 4 5 6|7 8 9 0|1 2 3 4 5 6 7 8|
+# PIO   |       |  set  |       | side  |      out      |
+#       |<--in 24-bit---------------------------------->|
+
+
+#                                        / / / /
+#                                       |b n i w|
+#                                       |u m n a|
+#                                       |s i t i|
+#                                       |r     t|
+#                                               
+# ->Z80 |    data-in    |  mux  |       |b n I W|       |            W:/WAIT I:/INT n:/NMI b:/BUSRQ
+# TinyT |     8 uio     | 4 ui  | 4 uo  | 4 ui  | 4 uo  |
+#       |7 6 5 4 3 2 1 0|7 6 . .|7 6 5 4|3 2 1 0|3 2 1 0|
+# Z80-> |    data-out   |       |addr_lo|       |addr_lo| (mux=00..)
+#       |    ---//---   |       |addr_hi|       |addr_hi| (mux=01..)
+#       |    ---//---   |       |b H f W|       |R I M 1| (mux=1x..) 1:/M1 M:/MREQ I:/IORQ R:/RD _ W:/WR f:/RFSH: H:/HALT b:/BUSAK
+# ------+---------------+-------+-------+-------+-------+
+# Pico  |8 7 6 5 4 3 2 1|0 9 . .|6 5 4 3|2 1 0 9|8 7 6 5|
+# PIO   |      out      | side  |       |  set  |       |
+#       |<-----------------in 24-bit------------------->|
+
+
+
+#           pin ui: 3210
+CPU_EXEC        = 0b1111
+CPU_WAIT        = 0b1110
+#           pin ui: 76
+MUX_CTRL        = 0b10
+MUX_ADDR_LO     = 0b00
+MUX_ADDR_HI     = 0b01
+
+PIN_CTRL_M1     = 0+0   # in_base + 0   UO_OUT0
+PIN_CTRL_MREQ   = 1+0   # in_base + 1   UO_OUT1
+PIN_CTRL_IORQ   = 2+0   # in_base + 2   UO_OUT2
+PIN_CTRL_RD     = 3+0   # in_base + 3   UO_OUT3
+PIN_CTRL_WR     = 4+4   # in_base + 8   UO_OUT4
+
+@rp2.asm_pio(autopull=False, autopush=False, 
+             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+             in_shiftdir=PIO.SHIFT_LEFT,
+             sideset_init=(PIO.OUT_LOW,)*2,
+             set_init=(PIO.OUT_HIGH,)*4,
+             out_init=(PIO.IN_LOW,)*8)
+def z80_read_handler():
+    # set(pins, CPU_EXEC)    # CAN BE OPTIMIZED ???   # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+    # nop()                       .side(MUX_CTRL)     # CAN BE OPTIMIZED ???
+    # wait(0, pin, PIN_CTRL_RD)                       # gpio[in_base + PIN_CTRL_RD]
+    # set(pins, CPU_WAIT)                             # gpio[set_base]                <= [/WAIT=0, /int=1, /nmi=1, /busreq=1]
+    # nop()                       .side(MUX_ADDR_HI)  # CAN BE OPTIMIZED ???
+    # in_(pins, 12)               .side(MUX_ADDR_HI)  # gpio[in_base + 0..11]         => ISR, ISR << 12
+    # nop()                       .side(MUX_ADDR_LO)
+    # in_(pins, 12)               .side(MUX_ADDR_LO)  # gpio[in_base + 0..11]         => ISR, ISR << 12
+    # push(block)
+    # pull(block)
+    # out(pins, 8)                .side(MUX_CTRL)     # gpio[out_base + 0..7]         <= OSR, OSR >> 8
+    # set(pins, CPU_EXEC)                             # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+    # wait(1, pin, PIN_CTRL_RD)                       # gpio[in_base + PIN_CTRL_RD]
+
+    set(pins, 0b1111)    # CAN BE OPTIMIZED ???     # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+    nop()                       .side(0b10)         # CAN BE OPTIMIZED ???
+    wait(0, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
+    set(pins, 0b1110)                               # gpio[set_base]                <= [/WAIT=0, /int=1, /nmi=1, /busreq=1]
+    nop()                       .side(0b01)         # CAN BE OPTIMIZED ???
+    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    nop()                       .side(0b00)
+    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    push(block)
+    pull(block)
+    out(pins, 8)                .side(0b10)         # gpio[out_base + 0..7]         <= OSR, OSR >> 8
+    set(pins, 0b1111)                               # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+    wait(1, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
+
+@rp2.asm_pio(autopull=False, autopush=False, 
+             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+             in_shiftdir=PIO.SHIFT_LEFT,
+             sideset_init=(PIO.OUT_LOW,)*2,
+             # set_init=(PIO.OUT_HIGH,)*4,
+             set_init=(PIO.OUT_HIGH,)*1,
+             out_init=(PIO.OUT_LOW,)*8)
+def z80_readwrite_handler():
+    set(y, 0b01)
+    set(pins, 1)                .side(0b10)                        # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+
+    label("busy_wait")
+    jmp(pin, "not_rd")          .side(0b10)
+    jmp("read")                 .side(0b10)
+
+    label("not_rd")
+    in_(pins, 2)                .side(0b10)
+    mov(x, isr)
+    mov(isr, null)                                  #                             0 => ISR
+    jmp(x_not_y, "busy_wait")
+    # jmp(x_not_y, "maybe_wr")
+    # mov(x, invert(isr))                             # ~gpio[in_base + 0..3]         => X
+    # jmp(not_x, "busy_wait")                         # waiting for MREQ or IORQ
+    # jmp("busy_wait")
+
+    label("maybe_wr")
+    nop()                       .side(0b10)
+    in_(pins, 24)               .side(0b10)         # gpio[in_base + 0..23]         => ISR, ISR << 24
+    push(block)                 .side(0b01)
+    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    nop()                       .side(0b00)
+    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    push(block)                 .side(0b10)
+    wait(1, pin, 8)             .side(0b10)
+    jmp("busy_wait")
+
+
+    label("read")
+    nop()                       .side(0b10)
+    in_(pins, 24)               .side(0b10)         # gpio[in_base + 0..23]         => ISR, ISR << 24
+    push(block)                 .side(0b01)
+    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    nop()                       .side(0b00)
+    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+    push(block)
+
+    set(pins, 0)                               # gpio[set_base]                <= [/busreq=1, /nmi=1, /int=1, /WAIT=0]
+    pull(block)
+    out(pindirs, 8)                                 # iodir[out_base + 0..7]        <= OSR, OSR >> 8
+    out(pins, 8)                                    # gpio[out_base + 0..7]         <= OSR, OSR >> 8
+    set(pins, 1)                .side(0b10)         # gpio[set_base]                <= [/busreq=1, /nmi=1, /int=1, /wait=1]
+    wait(1, pin, 3)             .side(0b10)
+    out(pindirs, 8)             .side(0b10)         # iodir[out_base + 0..7]        <= OSR, OSR >> 8
+
+    # # This does work with a statemachine 
+    # # freq of 2MHz... from uPython, we can set registers with 
+    # # this in about 40us (down from close to 8 milliseconds!)
+    # # any issues, easiest fixes are to just reduce the freq=
+    # # in the SM below, see if that resolves things
+    # out(isr, 8)         .side(0)                                    OSR => ISR, OSR >> 8
+    # in_(isr, 4)         .side(0b11)                                 ISR => ISR, ISR << 4
+    # mov(pins, isr)      .side(0b11)                                 ISR => pins
+    # out(isr, 8)         .side(0)                                    OSR => ISR, OSR >> 8
+    # in_(isr, 4)         .side(0b10)                                 ISR => ISR, ISR << 4
+    # mov(pins, isr)      .side(0b10).delay(3)                        ISR => pins
+
+    #              7ui4 7uo4 3ui0 3uo0
+    # 0     :ISR  [...._...._...._....]    OSR: [VVVV_vvvv_RRRR_rrrr]
+    # 1(out):ISR  [0000_0000_RRRR_rrrr]    OSR: [...._...._VVVV_vvvv]
+    # 2(in_):ISR  [0000_RRRR_rrrr_rrrr]
+    # 3(mov):pins [0000_RRRR_rrrr_rrrr]
+    # 4(out):ISR  [0000_0000_VVVV_vvvv]
+    # 5(in_):ISR  [0000_VVVV_vvvv_vvvv]
+    # 6(mov):pins [0000_VVVV_vvvv_vvvv]
+
+class Z80PIO:
+    '''
+        PIO implementation of the Z80 interface.
+    '''
+    def __init__(self, tt:DemoBoard, chip_frequency=10_000): # 2000000):
+        self.tt = tt
         
+        # tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to read, PICO side is set to write
+        tt.uio_oe_pico.value = 0
+        tt.uio_in = 0 # NOP instruction by default
+        
+        self._wait = 0
+        self._int = 0
+        self._nmi = 0
+        self._busrq = 0
+
+        # now hand over control of the tt.pins.in* pins and the two first
+        # bidirs to the PIO state machine
+        # self.sm = rp2.StateMachine(0, z80handler, 
+        self.sm = rp2.StateMachine(0, z80_readwrite_handler, 
+            freq=chip_frequency,
+            jmp_pin=     tt.pins.uo_out3.raw_pin,   # jumps on /RD signal
+            in_base=     tt.pins.uo_out0.raw_pin,   # reads     CTRL signals and ADDR bus
+            set_base=    tt.pins.ui_in0.raw_pin,    # sets      CTRL signals (WAIT) ???, INT, NMI, BUSREQ) 
+            sideset_base=tt.pins.ui_in6.raw_pin,    # sets      MUX
+            out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
+
+        self.sm.active(True)
+
+    # def update(self, rom, addr_mask=0xFFFF, verbose=False):
+    #     #addr = self.sm.get() & 0b1111_0000_1111_1111_0000_1111
+    #     x = self.sm.get()
+    #     addr = ((x>>8) & 0xF000) | ((x>>4) & 0x0FF0) | (x & 0x000F)
+    #     if verbose:
+    #         print(hex(x), hex(addr), hex(rom[addr & addr_mask]))
+    #     self.sm.put(rom[addr & addr_mask])
+    #     return addr
+
+    def run(self, ram, addr_mask=0xFFFF, verbose=False):
+        self.tt.uio_oe_pico.value = 0 # DATA bus on the Z80 side is set to write, PICO side is set to read
+        int_goes_high_after = 10
+        execution_reached_past_addr_0 = False
+        self.sm.active(True)
+        while True:
+            x = self.sm.get()
+            m1    = (x &  0x01) == 0
+            mreq  = (x &  0x02) == 0
+            rd    = (x &  0x08) == 0
+            wr    = (x & 0x100) == 0
+            halt  = (x & 0x400) == 0
+            flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
+            value = ((x>>16) & 0xFF)
+            y = self.sm.get()
+            addr = ((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)
+            if verbose:
+                print(
+                    "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
+                    "addr", hex(addr), hex(value) if wr else hex(ram[addr & addr_mask]),\
+                    hex(y), hex(x))
+            if rd:
+                value_from_ram = ram[addr & addr_mask] & 0xFF
+                self.sm.put((value_from_ram << 8) | 0x00_00FF)
+            elif wr:
+                ram[addr & addr_mask] = value
+
+            if halt:
+                return addr, flags
+
+            if (addr & addr_mask) == 0:
+                if execution_reached_past_addr_0:
+                    return addr, flags
+
+            execution_reached_past_addr_0 = addr > 0
+
+            # if int_goes_high_after == 0:
+            #     self.tt.ui_in[1] = 1
+            # int_goes_high_after -= 1
+
+            # TODO: if addr == 0:
+
+
+    def _update_cpu_ctrl():
+        sm.exec(f"set(pins, 0b{1-self._busrq}{1-self._nmi}{1-self._int}{1-self._wait})")
+
+    @property
+    def WAIT(self):
+        return self._wait
+    @WAIT.setter 
+    def WAIT(self, flag:bool):
+        self._wait = flag
+        self._update_cpu_ctrl()
+
+    @property
+    def INT(self):
+        return self._int
+    @INT.setter 
+    def INT(self, flag:bool):
+        self._int = flag
+        self._update_cpu_ctrl()
+
+    @property
+    def NMI(self):
+        return self._nmi
+    @NMI.setter 
+    def NMI(self, flag:bool):
+        self._nmi = flag
+        self._update_cpu_ctrl()
+
+    @property
+    def BUSRQ(self):
+        return self._busrq
+    @BUSRQ.setter 
+    def BUSRQ(self, flag:bool):
+        self._busrq = flag
+        self._update_cpu_ctrl()
+
 class Z80:
     '''
         Pure Python implementation, sans PIO or anything fancy.
