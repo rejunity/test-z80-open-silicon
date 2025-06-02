@@ -9,7 +9,7 @@ from ttboard.demoboard import DemoBoard
 import ttboard.log as logging
 log = logging.getLogger(__name__)
 
-from examples.tt_um_rejunity_z80.z80 import Z80
+from examples.tt_um_rejunity_z80.z80 import Z80, Z80PIO
 from examples.tt_um_rejunity_z80.setup import setup
 import ttboard.util.time as time 
 
@@ -136,8 +136,11 @@ PUSH_BC     = 0xC5
 PUSH_DE     = 0xD5
 PUSH_HL     = 0xE5
 PUSH_AF     = 0xF5
+HALT        = 0x76
 JP_nnnn     = 0xC3
 RET         = 0xC9
+DI          = 0xF3
+EI          = 0xFB
 def op(opcodes):
     if isinstance(opcodes, int):
         opcodes = [opcodes]
@@ -228,6 +231,108 @@ def prog_rom(delay=100, direct=True, verbose=False):
     # tt.clock_project_once()
 
 
+# WIP: does not work yet!!!
+# For some reason address bus seems does not seem to contain PC when HALTed
+# TODO: Will try to use NMI instead of INT
+# TODO: Maybe use Z80 loop to pause / busy wait between the "frames"
+# import examples.tt_um_rejunity_z80.demo as demo; demo.prog_rom_pio(100000, 100, True)
+def prog_rom_pio(sleep=1000, freq=100, verbose=False):
+    tt = DemoBoard.get()
+    if not setup(tt):
+        return False 
+    
+    z80 = Z80PIO(tt, chip_frequency=freq*100)
+    tt.clock_project_PWM(freq)
+
+    text = "Z8o HELLO uorld."
+    code = bytearray()
+    code += op(EI)
+    code += op([0xED, 0x56]) # IM1
+    # code += op(0x46) # IM0
+    # code += op(0x56) # IM1
+    code += op_JP_nnnn(0x0040)
+    while len(code) < 0x38:
+        code += op(NOP)
+    code += op([0xED, 0x4D]) # RETI
+    while len(code) < 0x40:
+        code += op(NOP)
+    for c in text:
+        code += op_JP_nnnn(hi=ascii_to_7seg[c], lo=len(code)+3)
+        code += op(EI)
+        code += op(HALT)
+    # assert len(code) == len(text)*4 + 1
+    code += op_JP_nnnn(0)
+    code_end = len(code)
+
+    rom = bytearray(0x100)
+    assert len(code) <= len(rom)
+    for n in range(len(code)):
+        rom[n] = code[n]
+    addr_mask = len(rom)-1
+
+    # rom[]
+
+    tt.ui_in[3:0] = 0b1111
+    ff_int = 0
+    while True:
+        # if z80.update(rom=rom, addr_mask=addr_mask, verbose=verbose) & addr_mask >= code_end:
+        #     break
+        z80.run(ram=rom, addr_mask=addr_mask, verbose=verbose)
+        tt.ui_in[7:6] = 0b01
+        time.sleep_us(sleep)
+        # tt.uio_oe_pico.value = 255
+        # tt.uio_in = 0xFF # 0xC9
+        tt.ui_in[7:6] = 0b01
+        tt.ui_in[1] = ff_int
+        tt.ui_in[7:6] = 0b01
+        # ff_int = not ff_int
+
+    # tt.clock_project_once()
+
+# import examples.tt_um_rejunity_z80.demo as demo; demo.prog_ram_pio(100, True)
+def prog_ram_pio(freq=100, verbose=False):
+    tt = DemoBoard.get()
+    if not setup(tt):
+        return False 
+    
+    z80 = Z80PIO(tt, chip_frequency=freq*100)
+    tt.clock_project_PWM(freq)
+
+    code = bytearray()
+    code += op_LD_nnnn("BC", 0xCAFE)
+    code += op_LD_nnnn("DE", 0xDECF)
+    code += op_LD_nnnn("HL", 0x1337)
+    code += op_LD_nnnn("SP", 0x0000)
+    # code += op(LD_A_B)                  
+    # code += op([LD_mem_A, 0x00, 0x80])
+    # code += op(LD_A_C)                  
+    # code += op([LD_mem_A, 0x01, 0x80])
+    # code += op(0x77) # LD (HL),A
+    # code += op(0x70) # LD (HL),B
+    # code += op(0x71) # LD (HL),C
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_HL)
+    code += op(PUSH_BC)
+    code += op(PUSH_DE)
+    code += op(HALT)
+
+    print(code)
+
+    ram = bytearray(0x100)
+    for n in range(len(code)):
+        ram[n] = code[n]
+
+    tt.ui_in[3:0] = 0b1111
+    z80.run(ram=ram, addr_mask=0xFF, verbose=verbose) # run until HALT
+
+    print("RAM 0xE0..0xFF: ", [hex(x) for x in ram[-16:]])
+    assert ram[-16:] == bytearray([0,0,0,0, 0xCF,0xDE, 0xFE,0xCA,   0x37,0x13, 0x37,0x13, 0x37,0x13, 0x37,0x13])
+
+    print("Success!")
+
+
 def prog_ram(delay=1, verbose=False):
     tt = DemoBoard.get()
     if not setup(tt):
@@ -304,7 +409,7 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
     assert(len(code) < 0x100)
 
     # Emulate CP/M bdos CALL 5 functions:
-    #  2 - output character on screen
+    #  2 - output character on screenZ80 instruction exerciser
     #  9 - output $-terminated string to screen
     def emulate_bdos(ram):
         if ram[0] == 2: # print char
@@ -362,3 +467,72 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
                 print(f"      [{z80.addr:04x}] {'=' if z80.M1 else '-'}> {int(z80.data):02x}")
 
         tt.clock_project_once()
+
+
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com")
+def cpm_pio(com_filename, ram_size=0x4000, freq=1000, verbose=False, reboot=True):
+    tt = DemoBoard.get()
+    if reboot:
+        if not setup(tt):
+            return False
+
+    code = bytearray()
+    code += op_JP_nnnn(0x100)           # CALL $0000 jump here - CP/M entree point to warm boot
+    code += op(NOP)
+    code += op(NOP)
+    assert(len(code) == 5)
+    code += op(NOP)                     # CALL $0005 jumps here - CP/M entree point to BDOS
+    code += op(NOP)                     # Keep bytes at address $0006 and $0007 as zero!
+    code += op(NOP)                     # CP/M contains top of the user memory at address $0006
+    code += op(LD_A_D)                  
+    code += op([LD_mem_A, 0x02, 0x00])
+    code += op(LD_A_E)
+    code += op([LD_mem_A, 0x01, 0x00])
+    code += op(LD_A_C)
+    code += op([LD_mem_A, 0x00, 0x00])  # Writing to $0000 triggers handling of BDOS call by emulation environment
+    code += op(RET)
+    assert(len(code) < 0x100)
+
+    # Emulate CP/M bdos CALL 5 functions:
+    #  2 - output character on screenZ80 instruction exerciser
+    #  9 - output $-terminated string to screen
+    def emulate_bdos(ram):
+        if ram[0] == 2: # print char
+            print(chr(ram[1]), end='')
+        elif ram[0] == 9: # print str terminated by $
+            ptr = ram[2]*256 + ram[1]
+            n = 0
+            while chr(ram[ptr]) != '$' or n > 80: # protect against non-terminated strings
+                print(chr(ram[ptr]), end='')
+                ptr = (ptr + 1) % len(ram)
+                n += 1
+
+    f = open(com_filename, mode='rb')    
+    loaded_code = f.read()
+    f.close()
+
+    ram = bytearray(ram_size)
+    for n in range(len(code)):
+        ram[n] = code[n]
+    for n in range(len(loaded_code)):
+        ram[0x0100+n] = loaded_code[n]
+
+    if verbose:
+        print(ram[0:16])
+        print(ram[0x100:0x120])
+
+    z80 = Z80PIO(tt, chip_frequency=freq*100)
+    tt.clock_project_PWM(freq)
+
+    tt.ui_in[3:0] = 0b1111
+    addr_mask = len(ram)-1
+    while True:
+        addr, flags = z80.run(ram=ram, addr_mask=addr_mask, verbose=verbose)
+        m1 = (flags & 1) > 0
+        rd = (flags & 8) > 0
+        if   addr == 0 and rd:
+            break
+        elif addr == 0:
+            emulate_bdos(ram) # emulate the CP/M BDOS
+
+    print("Program finished execution!")
