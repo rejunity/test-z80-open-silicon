@@ -149,52 +149,62 @@ def z80_read_handler():
              set_init=(PIO.OUT_HIGH,)*1,
              out_init=(PIO.OUT_LOW,)*8)
 def z80_readwrite_handler():
-    set(y, 0b01)
-    set(pins, 1)                .side(0b10)                        # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+    # NOTE: that Z80 has all control signals inverted (active low)!
+    set(y, 0b01) # TODO: support for IORQ+WR
+                 # currently sensitive only to:     1) RD|*
+                 #                                  2) WR|MREQ|(notM1)
+                 # missing:                         *) WR|IORQ
+
+                                # mux:CTRL
+    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
 
     label("busy_wait")
-    jmp(pin, "not_rd")          .side(0b10)
+    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
     jmp("read")                 .side(0b10)
 
     label("not_rd")
-    in_(pins, 2)                .side(0b10)
+    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
     mov(x, isr)
-    mov(isr, null)                                  #                             0 => ISR
+    mov(isr, null)                                  # clear ISR!
     jmp(x_not_y, "busy_wait")
-    # jmp(x_not_y, "maybe_wr")
-    # mov(x, invert(isr))                             # ~gpio[in_base + 0..3]         => X
-    # jmp(not_x, "busy_wait")                         # waiting for MREQ or IORQ
-    # jmp("busy_wait")
 
-    label("maybe_wr")
-    nop()                       .side(0b10)
-    in_(pins, 24)               .side(0b10)         # gpio[in_base + 0..23]         => ISR, ISR << 24
-    push(block)                 .side(0b01)
-    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    nop()                       .side(0b00)
-    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    push(block)                 .side(0b10)
-    wait(1, pin, 8)             .side(0b10)
+
+    label("write")              # mux:CTRL          # will push 2 packets, see run()
+    nop()                       .side(0b10)         #                                   <-- could remove
+    in_(pins, 24)               .side(0b10)         #
+                                # mux:ADDR_HI       #
+    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+    in_(pins, 12)               .side(0b01)         #
+                                # mux:ADDR_LO       #
+    nop()                       .side(0b00)         #
+    in_(pins, 12)               .side(0b00)         #
+                                # mux:CTRL          #
+    push(block)                 .side(0b10)         # packet #2: ADDRess bus
+    wait(1, pin, 8)             .side(0b10)         # wait until WR finishes
     jmp("busy_wait")
 
 
-    label("read")
-    nop()                       .side(0b10)
-    in_(pins, 24)               .side(0b10)         # gpio[in_base + 0..23]         => ISR, ISR << 24
-    push(block)                 .side(0b01)
-    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    nop()                       .side(0b00)
-    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    push(block)
+    label("read")               # mux:CTRL          # will push 2 and pop 1 packet, see run()
+    nop()                       .side(0b10)         #                                   <-- could remove
+    in_(pins, 24)               .side(0b10)         #
+                                # mux:ADDR_HI       #
+    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+    in_(pins, 12)               .side(0b01)         #
+                                # mux:ADDR_LO       #
+    nop()                       .side(0b00)         #
+    in_(pins, 12)               .side(0b00)         #
+    push(block)                                     # packet #2: ADDRess bus
+                                                    #
+    set(pins, 0)                                    # /WAIT <= 0, Z80 is PAUSED until 
+    pull(block)                                     #   wait for packet from RAM to arrive, see run()
+    out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
+    out(pins, 8)                                    #   put RAM value Z80 DATA bus
+                                # mux:CTRL          #
+    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+    wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
+    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
-    set(pins, 0)                               # gpio[set_base]                <= [/busreq=1, /nmi=1, /int=1, /WAIT=0]
-    pull(block)
-    out(pindirs, 8)                                 # iodir[out_base + 0..7]        <= OSR, OSR >> 8
-    out(pins, 8)                                    # gpio[out_base + 0..7]         <= OSR, OSR >> 8
-    set(pins, 1)                .side(0b10)         # gpio[set_base]                <= [/busreq=1, /nmi=1, /int=1, /wait=1]
-    wait(1, pin, 3)             .side(0b10)
-    out(pindirs, 8)             .side(0b10)         # iodir[out_base + 0..7]        <= OSR, OSR >> 8
-
+    # Below is the code I was learning from by Mike Bell and Pat Deegan
     # # This does work with a statemachine 
     # # freq of 2MHz... from uPython, we can set registers with 
     # # this in about 40us (down from close to 8 milliseconds!)
@@ -256,11 +266,11 @@ class Z80PIO:
 
     def run(self, ram, addr_mask=0xFFFF, verbose=False):
         self.tt.uio_oe_pico.value = 0 # DATA bus on the Z80 side is set to write, PICO side is set to read
-        int_goes_high_after = 10
+        # int_goes_high_after = 10
         execution_reached_past_addr_0 = False
         self.sm.active(True)
         while True:
-            x = self.sm.get()
+            x = self.sm.get() # 1st packet contains flags & value from the DATA bus
             m1    = (x &  0x01) == 0
             mreq  = (x &  0x02) == 0
             rd    = (x &  0x08) == 0
@@ -268,7 +278,7 @@ class Z80PIO:
             halt  = (x & 0x400) == 0
             flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
             value = ((x>>16) & 0xFF)
-            y = self.sm.get()
+            y = self.sm.get() # 2nd packet contains lo & hi bits of the ADDRess bus
             addr = ((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)
             if verbose:
                 print(
@@ -277,7 +287,9 @@ class Z80PIO:
                     hex(y), hex(x))
             if rd:
                 value_from_ram = ram[addr & addr_mask] & 0xFF
-                self.sm.put((value_from_ram << 8) | 0x00_00FF)
+                self.sm.put((value_from_ram << 8) | 0x00_00_FF) # 1) 0xFF sets PICO pindirs to write
+                                                                # 2) PICO puts byte from RAM on Z80's data bus
+                                                                # 3) 0x00 sets PICO pindirs back to read
             elif wr:
                 ram[addr & addr_mask] = value
 
