@@ -510,9 +510,12 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
                 ptr = (ptr + 1) % len(ram)
                 n += 1
 
-    f = open(com_filename, mode='rb')    
-    loaded_code = f.read()
-    f.close()
+    if com_filename == "":
+        loaded_code = bytearray()
+    else:
+        f = open(com_filename, mode='rb')    
+        loaded_code = f.read()
+        f.close()
 
     ram = bytearray(ram_size)
     for n in range(len(code)):
@@ -529,6 +532,7 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
     z80 = Z80PIO(tt, chip_frequency=freq*freq_mul if freq_mul > 0 else -1)
     # tt.clock_project_PWM(freq, quiet=False, max_rp2040_freq=rp2040_freq)
 
+    start_time = time.time_ns()
     while True:
         # addr, flags = z80.run(ram=ram, addr_mask=addr_mask, verbose=verbose)
         addr, flags = z80.run(ram, addr_mask, verbose)
@@ -539,5 +543,11 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
             break
         elif addr == 0:
             emulate_bdos(ram) # emulate the CP/M BDOS
+    end_time = time.time_ns()
 
-    print("Program finished execution!")
+    tt.clock_project_stop()
+    if com_filename == "":
+        estimate_mhz = f"assuming 16K nops = {len(ram)*4*1000 / (end_time - start_time)}MHz !"
+    else:
+        estimate_mhz = ""
+    print(f"Program finished execution in {end_time - start_time}ns {estimate_mhz}")
