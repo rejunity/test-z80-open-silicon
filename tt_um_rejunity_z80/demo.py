@@ -491,6 +491,9 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
     code += op(LD_A_C)
     code += op([LD_mem_A, 0x00, 0x00])  # Writing to $0000 triggers handling of BDOS call by emulation environment
     code += op(RET)
+    code += op(RET)
+    code += op(RET)
+    code += op(RET)
     assert(len(code) < 0x100)
 
     # Emulate CP/M bdos CALL 5 functions:
