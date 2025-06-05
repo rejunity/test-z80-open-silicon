@@ -519,6 +519,7 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
         ram[n] = code[n]
     for n in range(len(loaded_code)):
         ram[0x0100+n] = loaded_code[n]
+    addr_mask = len(ram)-1
 
     if verbose:
         print(ram[0:16])
@@ -528,10 +529,10 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_fre
     z80 = Z80PIO(tt, chip_frequency=freq*freq_mul if freq_mul > 0 else -1)
     # tt.clock_project_PWM(freq, quiet=False, max_rp2040_freq=rp2040_freq)
 
-    addr_mask = len(ram)-1
     while True:
         # addr, flags = z80.run(ram=ram, addr_mask=addr_mask, verbose=verbose)
         addr, flags = z80.run(ram, addr_mask, verbose)
+        addr = addr & addr_mask
         m1 = (flags & 1) > 0
         rd = (flags & 8) > 0
         if   addr == 0 and rd:
