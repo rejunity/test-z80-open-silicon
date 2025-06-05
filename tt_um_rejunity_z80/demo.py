@@ -512,18 +512,23 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
                 ptr = (ptr + 1) % len(ram)
                 n += 1
 
+    ram = bytearray(ram_size)
+    for n in range(len(code)):
+        ram[n] = code[n]
+
     if com_filename == "":
-        loaded_code = bytearray()
+        pass
+    elif com_filename == "push":
+        ram[0x0100] = LD_HL_nnnn
+        for n in range(len(ram) - 0x101):
+            ram[0x0101 + n] = PUSH_HL
     else:
         f = open(com_filename, mode='rb')    
         loaded_code = f.read()
         f.close()
+        for n in range(len(loaded_code)):
+            ram[0x0100+n] = loaded_code[n]
 
-    ram = bytearray(ram_size)
-    for n in range(len(code)):
-        ram[n] = code[n]
-    for n in range(len(loaded_code)):
-        ram[0x0100+n] = loaded_code[n]
     addr_mask = len(ram)-1
 
     if verbose:
@@ -547,7 +552,19 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
 
     tt.clock_project_stop()
     if com_filename == "":
-        estimate_mhz = f"assuming 16K nops = {len(ram)*4*1000 / (end_time - start_time)}MHz !"
+        cycles_per_op = 4
+        ops = len(ram)-0x100
+        cycles = ops*cycles_per_op
+        estimate_mhz = f"assuming 16K nops = {cycles*1000 / (end_time - start_time):.3f}MHz !"
+    elif com_filename == "push":
+        cycles_per_op = 11
+        ops = len(ram)-0x100
+        cycles = ops*cycles_per_op
+        estimate_mhz = f"assuming 16K push hl = {cycles*1000 / (end_time - start_time):.3f}MHz !"
     else:
         estimate_mhz = ""
     print(f"Program finished execution in {end_time - start_time}ns {estimate_mhz}")
+
+    if verbose:
+        print("RAM 0x00..0x0F: ", [hex(x) for x in ram[0:16]])
+        print("RAM 0xE0..0xFF: ", [hex(x) for x in ram[-16:]])
