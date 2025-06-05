@@ -532,12 +532,10 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
 
     platform.set_RP_system_clock(rp2040_freq)
     z80 = Z80PIO(tt, chip_frequency=freq*freq_mul if freq_mul > 0 else -1)
-    # tt.clock_project_PWM(freq, quiet=False, max_rp2040_freq=rp2040_freq)
 
     start_time = time.time_ns()
     while True:
-        # addr, flags = z80.run(ram=ram, addr_mask=addr_mask, verbose=verbose)
-        addr, flags = z80.run(ram, addr_mask, verbose)
+        addr, flags = z80.run(ram=ram, addr_mask=addr_mask, verbose=verbose)
         addr = addr & addr_mask
         m1 = (flags & 1) > 0
         rd = (flags & 8) > 0
