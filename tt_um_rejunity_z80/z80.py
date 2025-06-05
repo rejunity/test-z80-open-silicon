@@ -204,6 +204,64 @@ def z80_readwrite_handler():
     wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
+@rp2.asm_pio(autopull=False, autopush=False, 
+             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+             in_shiftdir=PIO.SHIFT_LEFT,
+             sideset_init=(PIO.OUT_LOW,)*2,
+             # set_init=(PIO.OUT_HIGH,)*4,
+             set_init=(PIO.OUT_HIGH,)*1,
+             out_init=(PIO.OUT_LOW,)*8)
+def z80_readwrite_handler2():
+    # NOTE: that Z80 has all control signals inverted (active low)!
+    set(y, 0b01) # TODO: support for IORQ+WR
+                 # currently sensitive only to:     1) RD|*
+                 #                                  2) (notRD)|MREQ|(notM1)
+                 # missing:                         *) (notRD)|IORQ
+    label("busy_signal_change_wait") # TODO
+                                # mux:CTRL
+    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+
+    label("busy_wait")
+    nop()                       .side(0b10)
+    nop()                       .side(0b10)
+    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
+    jmp("readwrite")            .side(0b10)
+
+    label("not_rd")
+    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
+    mov(x, isr)                 .side(0b10)
+    mov(isr, null)              .side(0b10)         # clear ISR!
+    jmp(x_not_y, "busy_wait")   .side(0b10)
+
+    label("readwrite")          # mux:CTRL          # will push 2 and pop 1 packet, see run()
+    set(pins, 0)                .side(0b10)         # /WAIT <= 0, Z80 is PAUSED until 
+    in_(pins, 24)               .side(0b10)         #
+                                # mux:ADDR_HI       #
+    nop()                       .side(0b01)
+    nop()                       .side(0b01)                                
+    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+    in_(pins, 12)               .side(0b01)         #
+                                # mux:ADDR_LO       #
+    nop()                       .side(0b00)
+    nop()                       .side(0b00)         #
+    nop()                       .side(0b00)
+    in_(pins, 12)               .side(0b00)         #
+    push(block)                                     # packet #2: ADDRess bus
+                                                    #
+                                # mux:CTRL          #
+    pull(block)                 .side(0b10)         #   wait for packet from RAM to arrive, see run()
+
+    nop()                       .side(0b10)
+    nop()                       .side(0b10)         #
+    jmp(pin, "busy_signal_change_wait") .side(0b10)
+
+    out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
+    out(pins, 8)                                    #   put RAM value Z80 DATA bus
+                                # mux:CTRL          #
+    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+    wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
+    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
+
     # Below is the code I was learning from by Mike Bell and Pat Deegan
     # # This does work with a statemachine 
     # # freq of 2MHz... from uPython, we can set registers with 
