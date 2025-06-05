@@ -473,9 +473,8 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
 # import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com", rp2040_freq=133_000_000)
 def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_freq=133_000_000, verbose=False):
     tt = DemoBoard.get()
-    if reboot:
-        if not setup(tt):
-            return False
+    if not setup(tt):
+        return False
 
     code = bytearray()
     code += op_JP_nnnn(0x100)           # CALL $0000 jump here - CP/M entree point to warm boot
