@@ -5,6 +5,7 @@ Created on May 23, 2025
 '''
 
 from ttboard.demoboard import DemoBoard
+import ttboard.util.platform as platform
 
 import ttboard.log as logging
 log = logging.getLogger(__name__)
@@ -469,8 +470,8 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
         tt.clock_project_once()
 
 
-# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com")
-def cpm_pio(com_filename, ram_size=0x4000, freq=1000, verbose=False, reboot=True):
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com", rp2040_freq=133_000_000)
+def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_freq=133_000_000, verbose=False):
     tt = DemoBoard.get()
     if reboot:
         if not setup(tt):
@@ -523,6 +524,7 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=1000, verbose=False, reboot=True
 
     z80 = Z80PIO(tt, chip_frequency=freq*100)
     tt.clock_project_PWM(freq)
+    platform.set_RP_system_clock(rp2040_freq)
 
     tt.ui_in[3:0] = 0b1111
     addr_mask = len(ram)-1
