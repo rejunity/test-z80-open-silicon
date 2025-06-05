@@ -171,6 +171,7 @@ def z80_readwrite_handler():
 
     label("write")              # mux:CTRL          # will push 2 packets, see run()
     nop()                       .side(0b10)         #                                   <-- could remove
+    # # wait(0, pin, 8)             .side(0b10)         # ************
     in_(pins, 24)               .side(0b10)         #
                                 # mux:ADDR_HI       #
     push(block)                 .side(0b01)         # packet #1: DATA bus + flags
@@ -180,7 +181,8 @@ def z80_readwrite_handler():
     in_(pins, 12)               .side(0b00)         #
                                 # mux:CTRL          #
     push(block)                 .side(0b10)         # packet #2: ADDRess bus
-    wait(1, pin, 8)             .side(0b10)         # wait until WR finishes
+    # # wait(1, pin, 8)             .side(0b10)         # wait until WR finishes
+    pull(block) # dummy pull
     jmp("busy_wait")
 
 
