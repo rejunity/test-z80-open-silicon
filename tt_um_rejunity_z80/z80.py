@@ -152,8 +152,8 @@ def z80_readwrite_handler():
     # NOTE: that Z80 has all control signals inverted (active low)!
     set(y, 0b01) # TODO: support for IORQ+WR
                  # currently sensitive only to:     1) RD|*
-                 #                                  2) WR|MREQ|(notM1)
-                 # missing:                         *) WR|IORQ
+                 #                                  2) (notRD)|MREQ|(notM1)
+                 # missing:                         *) (notRD)|IORQ
 
                                 # mux:CTRL
     set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
@@ -264,6 +264,71 @@ def z80_readwrite_handler2():
     wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
+
+@rp2.asm_pio(autopull=False, autopush=False, 
+             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+             in_shiftdir=PIO.SHIFT_LEFT,
+             sideset_init=(PIO.OUT_LOW,)*2,
+             set_init=(PIO.OUT_HIGH,)*1,
+             out_init=(PIO.OUT_LOW,)*8)
+def z80_clocking_handler():
+
+    label("new_clock")
+    set(pins, 1)                                    # CLK poesedge __/^^
+    set(y, 16)
+    label("delay1")
+    jmp(y_dec, "delay1")
+                                # mux:CTRL
+    set(pins, 0)                .side(0b10)         # clk negedge  ^^\__
+    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
+    jmp("readwrite")            .side(0b10)
+
+    label("not_rd")
+    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
+    mov(x, isr)                 .side(0b10)
+    mov(isr, null)              .side(0b10)         # clear ISR!
+    set(y, 0b01) # TODO: support for IORQ+WR
+                 # currently sensitive only to:     1) RD|*
+                 #                                  2) (notRD)|MREQ|(notM1)
+                 # missing:                         *) (notRD)|IORQ    
+    jmp(x_not_y, "new_clock")   .side(0b10)
+
+    label("readwrite")          # mux:CTRL          # will push 2 and pop 1 packet, see run()
+    in_(pins, 24)               .side(0b10)         #
+                                # mux:ADDR_HI       #
+    nop()                       .side(0b01)                                
+    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+    in_(pins, 12)               .side(0b01)         #
+                                # mux:ADDR_LO       #
+    nop()                       .side(0b00)         #
+    nop()                       .side(0b00)
+    in_(pins, 12)               .side(0b00)         #
+    push(block)                                     # packet #2: ADDRess bus
+                                                    #
+                                # mux:CTRL          #
+    pull(block)                 .side(0b10)         #   wait for packet from RAM to arrive, see run()
+
+    nop()                       .side(0b10)         #
+    jmp(pin, "new_clock")       .side(0b10)
+
+    out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
+    out(pins, 8)                                    #   put RAM value Z80 DATA bus
+
+    set(pins, 1)                                    # CLK poesedge __/^^
+    set(y, 16)
+    label("delay2")
+    jmp(y_dec, "delay2")
+    set(pins, 0)                                    # clk negedge  ^^\__
+    set(y, 16)
+    label("delay3")
+    jmp(y_dec, "delay3")
+
+                                # mux:CTRL          #
+    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
+
+
+
+
     # Below is the code I was learning from by Mike Bell and Pat Deegan
     # # This does work with a statemachine 
     # # freq of 2MHz... from uPython, we can set registers with 
@@ -296,22 +361,32 @@ class Z80PIO:
         # tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to read, PICO side is set to write
         tt.uio_oe_pico.value = 0
         tt.uio_in = 0 # NOP instruction by default
+        tt.ui_in[3:0] = 0b1110 # /WAIT
+        tt.ui_in[7:4] = 0
         
         self._wait = 0
         self._int = 0
         self._nmi = 0
         self._busrq = 0
 
-        # now hand over control of the tt.pins.in* pins and the two first
-        # bidirs to the PIO state machine
         # self.sm = rp2.StateMachine(0, z80handler, 
-        self.sm = rp2.StateMachine(0, z80_readwrite_handler, 
+        # self.sm = rp2.StateMachine(0, z80_readwrite_handler2, 
+        #     freq=chip_frequency,
+        #     jmp_pin=     tt.pins.uo_out3.raw_pin,   # jumps on /RD signal
+        #     in_base=     tt.pins.uo_out0.raw_pin,   # reads     CTRL signals and ADDR bus
+        #     set_base=    tt.pins.ui_in0.raw_pin,    # sets      CTRL signals (WAIT) ???, INT, NMI, BUSREQ) 
+        #     sideset_base=tt.pins.ui_in6.raw_pin,    # sets      MUX
+        #     out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
+
+        tt.ui_in[3:0] = 0b1111 # /WAIT
+        self.sm = rp2.StateMachine(0, z80_clocking_handler,
             freq=chip_frequency,
             jmp_pin=     tt.pins.uo_out3.raw_pin,   # jumps on /RD signal
             in_base=     tt.pins.uo_out0.raw_pin,   # reads     CTRL signals and ADDR bus
-            set_base=    tt.pins.ui_in0.raw_pin,    # sets      CTRL signals (WAIT) ???, INT, NMI, BUSREQ) 
+            set_base=    tt.pins.rp_projclk.raw_pin,# toggles   CLK 
             sideset_base=tt.pins.ui_in6.raw_pin,    # sets      MUX
             out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
+
 
         self.sm.active(True)
 
@@ -324,85 +399,91 @@ class Z80PIO:
     #     self.sm.put(rom[addr & addr_mask])
     #     return addr
 
-    def run(self, ram, addr_mask=0xFFFF, verbose=False):
-        self.tt.uio_oe_pico.value = 0 # DATA bus on the Z80 side is set to write, PICO side is set to read
-        # int_goes_high_after = 10
+    @micropython.viper
+    def run(self, ram, addr_mask:int=0xFFFF, verbose:bool=False):
         execution_reached_past_addr_0 = False
-        self.sm.active(True)
+        reads = 0
         while True:
-            x = self.sm.get() # 1st packet contains flags & value from the DATA bus
-            m1    = (x &  0x01) == 0
-            mreq  = (x &  0x02) == 0
+            x = int(self.sm.get()) # 1st packet contains flags & value from the DATA bus
+            y = int(self.sm.get()) # 2nd packet contains lo & hi bits of the ADDRess bus
             rd    = (x &  0x08) == 0
             wr    = (x & 0x100) == 0
             halt  = (x & 0x400) == 0
-            flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
-            value = ((x>>16) & 0xFF)
-            y = self.sm.get() # 2nd packet contains lo & hi bits of the ADDRess bus
             addr = ((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)
             if verbose:
+                m1    = (x &  0x01) == 0
+                mreq  = (x &  0x02) == 0                
+                value = ((x>>16) & 0xFF)
+                flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
+                # self.tt.ui_in = 0b1000_1110 # /WAIT
                 print(
                     "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
-                    "addr", hex(addr), hex(value) if wr else hex(ram[addr & addr_mask]),\
-                    hex(y), hex(x))
+                    "addr", hex(addr), hex(value) if wr else hex(int(ram[addr & addr_mask])),\
+                    hex(y), hex(x),\
+                    "r/t:", self.sm.rx_fifo(), self.sm.tx_fifo())
             if rd:
-                value_from_ram = ram[addr & addr_mask] & 0xFF
+                value_from_ram = int(ram[addr & addr_mask]) & 0xFF
                 self.sm.put((value_from_ram << 8) | 0x00_00_FF) # 1) 0xFF sets PICO pindirs to write
                                                                 # 2) PICO puts byte from RAM on Z80's data bus
                                                                 # 3) 0x00 sets PICO pindirs back to read
+                reads += 1
             elif wr:
+                value = ((x>>16) & 0xFF)
                 ram[addr & addr_mask] = value
+                self.sm.put(0) # dummy packet
+            else:
+                self.sm.put(0) # dummy packet
 
             if halt:
+                flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
                 return addr, flags
 
             if (addr & addr_mask) == 0:
+                # print("ZERO",)
+                flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
                 if execution_reached_past_addr_0:
                     return addr, flags
 
             execution_reached_past_addr_0 = addr > 0
 
-            # if int_goes_high_after == 0:
-            #     self.tt.ui_in[1] = 1
-            # int_goes_high_after -= 1
-
-            # TODO: if addr == 0:
+            if reads % 16384 == 0:
+                print(reads)
 
 
-    def _update_cpu_ctrl():
-        sm.exec(f"set(pins, 0b{1-self._busrq}{1-self._nmi}{1-self._int}{1-self._wait})")
+    # def _update_cpu_ctrl():
+    #     sm.exec(f"set(pins, 0b{1-self._busrq}{1-self._nmi}{1-self._int}{1-self._wait})")
 
-    @property
-    def WAIT(self):
-        return self._wait
-    @WAIT.setter 
-    def WAIT(self, flag:bool):
-        self._wait = flag
-        self._update_cpu_ctrl()
+    # @property
+    # def WAIT(self):
+    #     return self._wait
+    # @WAIT.setter 
+    # def WAIT(self, flag:bool):
+    #     self._wait = flag
+    #     self._update_cpu_ctrl()
 
-    @property
-    def INT(self):
-        return self._int
-    @INT.setter 
-    def INT(self, flag:bool):
-        self._int = flag
-        self._update_cpu_ctrl()
+    # @property
+    # def INT(self):
+    #     return self._int
+    # @INT.setter 
+    # def INT(self, flag:bool):
+    #     self._int = flag
+    #     self._update_cpu_ctrl()
 
-    @property
-    def NMI(self):
-        return self._nmi
-    @NMI.setter 
-    def NMI(self, flag:bool):
-        self._nmi = flag
-        self._update_cpu_ctrl()
+    # @property
+    # def NMI(self):
+    #     return self._nmi
+    # @NMI.setter 
+    # def NMI(self, flag:bool):
+    #     self._nmi = flag
+    #     self._update_cpu_ctrl()
 
-    @property
-    def BUSRQ(self):
-        return self._busrq
-    @BUSRQ.setter 
-    def BUSRQ(self, flag:bool):
-        self._busrq = flag
-        self._update_cpu_ctrl()
+    # @property
+    # def BUSRQ(self):
+    #     return self._busrq
+    # @BUSRQ.setter 
+    # def BUSRQ(self, flag:bool):
+    #     self._busrq = flag
+    #     self._update_cpu_ctrl()
 
 class Z80:
     '''
