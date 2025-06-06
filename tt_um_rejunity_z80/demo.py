@@ -476,7 +476,7 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
 # import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("push", freq=100_000)
 # import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("", freq=2_000_000)
 # import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("push", freq=2_000_000)
-def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_freq=266_000_000, verbose=False):
+def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, pio_cycles_per_z80_cycle=24, rp2040_freq=266_000_000, verbose=False):
     tt = DemoBoard.get()
     if not setup(tt):
         return False
@@ -546,7 +546,7 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
         print(ram[0x100:0x120])
 
     platform.set_RP_system_clock(rp2040_freq)
-    z80 = Z80PIO(tt, chip_frequency=freq*freq_mul if freq_mul > 0 else -1)
+    z80 = Z80PIO(tt, chip_frequency=freq*pio_cycles_per_z80_cycle if pio_cycles_per_z80_cycle > 0 else -1)
 
     start_time = time.time_ns()
     while True:
@@ -578,3 +578,7 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
     if verbose:
         print("RAM 0x00..0x0F: ", [hex(x) for x in ram[0:16]])
         print("RAM 0xE0..0xFF: ", [hex(x) for x in ram[-16:]])
+
+
+def exec(com_filename, ram_size=0x4000, freq=400_000, pio_cycles_per_z80_cycle=24, rp2040_freq=266_000_000, verbose=False):
+    return cpm_pio(com_filename, ram_size=ram_size, freq=freq, pio_cycles_per_z80_cycle=pio_cycles_per_z80_cycle, rp2040_freq=rp2040_freq, verbose=verbose):
