@@ -43,7 +43,14 @@ demo.hello()
 
 To load Z80 `.com` programs in the tiniest CP/M environment, type:
 ```
-demo.cpm("/hello.com")
+demo.exec("/hello.com")
+```
+
+## ZEXALL thorough instruction test suite
+
+To load (a subset) of a Z80 Instruction Set Exerciser, type:
+```
+demo.exec("/zexsmall.com")
 ```
 
 # Plan
@@ -58,8 +65,9 @@ demo.cpm("/hello.com")
   - [x] Intercept `CALL $0005`, write `C`, `DE` registers to RAM at `0..2`
   - [x] Intercept `JP $0000` when test is finished
   - [x] 16KB is enough to load and execute ZEXALL, if stack is placed at the top `LD SP, $0000`
-  - [ ] Need to implement PIO MircoPython to read DATA and ADDR buses, otherwise ZEXALL will take days, for inspiration: https://github.com/rejunity/test_rejunity_ay8913
-  - [ ] or in C
+  - [x] PIO MircoPython to read DATA and ADDR buses, reaches 400 KHz (still too slow to be practical for ZEXALL)
+  - [x] Compiled a smaller subset of instructions ZEXSMALL
+- [ ] Run Z80Prelim test from the ZEXALL package 
 
 ### External Hardware
 - [ ] External ROM test
