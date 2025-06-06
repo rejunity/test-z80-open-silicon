@@ -523,11 +523,18 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_fre
         for n in range(len(ram) - 0x101):
             ram[0x0101 + n] = PUSH_HL
     else:
-        f = open(com_filename, mode='rb')    
-        loaded_code = f.read()
-        f.close()
-        for n in range(len(loaded_code)):
-            ram[0x0100+n] = loaded_code[n]
+        chunk_size = 256
+        base_addr = 0x0100
+        addr = base_addr
+
+        with open(com_filename, mode='rb') as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                for byte in chunk:
+                    ram[addr] = byte
+                    addr += 1        
 
     addr_mask = len(ram)-1
 
