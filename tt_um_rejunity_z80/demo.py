@@ -581,4 +581,4 @@ def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, pio_cycles_per_z80_cycl
 
 
 def exec(com_filename, ram_size=0x4000, freq=400_000, pio_cycles_per_z80_cycle=24, rp2040_freq=266_000_000, verbose=False):
-    return cpm_pio(com_filename, ram_size=ram_size, freq=freq, pio_cycles_per_z80_cycle=pio_cycles_per_z80_cycle, rp2040_freq=rp2040_freq, verbose=verbose):
+    return cpm_pio(com_filename, ram_size=ram_size, freq=freq, pio_cycles_per_z80_cycle=pio_cycles_per_z80_cycle, rp2040_freq=rp2040_freq, verbose=verbose)
