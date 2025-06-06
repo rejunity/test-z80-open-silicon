@@ -470,9 +470,12 @@ def cpm(com_filename, ram_size=0x4000, verbose=False, reboot=True):
         tt.clock_project_once()
 
 
-# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com", rp2040_freq=133_000_000)
-# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("", freq=400_000, rp2040_freq=133_000_000)
-# def cpm_pio(com_filename, ram_size=0x4000, freq=100_000, freq_mul=40, rp2040_freq=133_000_000, verbose=False):
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/hello.com")
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("/zexsmall.com")
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("", freq=100_000)
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("push", freq=100_000)
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("", freq=2_000_000)
+# import examples.tt_um_rejunity_z80.demo as demo; demo.cpm_pio("push", freq=2_000_000)
 def cpm_pio(com_filename, ram_size=0x4000, freq=400_000, freq_mul=24, rp2040_freq=266_000_000, verbose=False):
     tt = DemoBoard.get()
     if not setup(tt):
