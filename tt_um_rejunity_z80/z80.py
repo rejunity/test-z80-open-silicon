@@ -235,10 +235,11 @@ PIN_CTRL_WR     = 4+4   # in_base + 8   UO_OUT4
              out_init=(PIO.OUT_LOW,)*8)
 def z80_clocking_handler():
     label("new_clock")
-                                # mux:CTRL
+    ################################################# Detect if READ or WRITE is happening
+                                # mux:CTRL          #
     set(pins, 1)                .side(0b10)         # CLK poesedge __/^^
     nop()                       .side(0b10)
-    nop()                       .side(0b10)
+    nop()                       .side(0b10)         # wait for mux to stabilize
     jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
     jmp("read")                 .side(0b10)
 
@@ -250,31 +251,33 @@ def z80_clocking_handler():
                  # currently sensitive only to:     1) RD|*
                  #                                  2) (notRD)|MREQ|(notM1)
                  # missing:                         *) (notRD)|IORQ    
-    jmp(x_not_y, "clock_ph2")   .side(0b10)
+    jmp(x_not_y, "clock_ph2")   .side(0b10)         # if neither READ or WRITE happened, jump to finish the 2nd phase of the clock cycle
 
-    label("write")              # mux:CTRL          # will push 2 and pop 1 packet, see run()
-    label("read")               # mux:CTRL          # will push 2 and pop 1 packet, see run()
+    ################################################# To process READ or WRITE we will push 2 and pop 1 packet, see run()
+    label("write")                                  #
+    label("read")               # mux:CTRL          #
     set(pins, 0)                .side(0b10)         # clk negedge  ^^\__
-
+                                                    #
     in_(pins, 24)               .side(0b10)         #
                                 # mux:ADDR_HI       #
-    nop()                       .side(0b01)
-    nop()                       .side(0b01)
-    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
-    in_(pins, 12)               .side(0b01)         #
+    push(block)                 .side(0b01)         #   PUSH packet #1: DATA bus + flags
+    nop()                       .side(0b01)         #
+    nop()                       .side(0b01)         #   wait for mux to stabilize
+    in_(pins, 12)               .side(0b01)         # 
                                 # mux:ADDR_LO       #
-    nop()                       .side(0b00)
     nop()                       .side(0b00)         #
-    nop()                       .side(0b00)
+    nop()                       .side(0b00)         #
+    nop()                       .side(0b00)         #
     in_(pins, 12)               .side(0b00)         #
-    push(block)                                     # packet #2: ADDRess bus
+    push(block)                                     #   PUSH packet #2: ADDRess bus
                                                     #
                                 # mux:CTRL          #
-    pull(block)                 .side(0b10)         #   wait for packet from RAM to arrive, see run()
-    jmp(pin, "new_clock")       .side(0b10)
+    pull(block)                 .side(0b10)         #   WAIT for packet from RAM to arrive, see run()
+    jmp(pin, "new_clock")       .side(0b10)         # WRITE ends here
 
     out(pindirs, 8)                                 #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
-    out(pins, 8)                                    #   put RAM value Z80 DATA bus
+    out(pins, 8)                                    #   put RAM value on the Z80 DATA bus
+                                                    #   and hold results for 1 more clock cycle
 
     set(pins, 1)                .delay(2)           # CLK poesedge __/^^
     nop()                       .delay(3)
@@ -285,7 +288,8 @@ def z80_clocking_handler():
     nop()                       .delay(3)
     nop()                       .delay(3)
 
-    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
+    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode
+                                                    # READ ends here
 
 
     # Below is the code I was learning from by Mike Bell and Pat Deegan
