@@ -47,31 +47,9 @@ from rp2 import PIO
 #     UIO7 = 28
 #     RPIO29 = 29
 
-#
-# Ok the AY8913 register writer
-# this thing is a little pio program that does some fancy footwork
-# to get around the fact that our chip input pins are split up 
-# into 2 blocks
-#  CHIPIN_LOW_NIBBLE  CHIPOUT_HIGH_NIBBLE  CHIPIN_HIGHNIBBLE
-# so we define the pio output (which talks to the chip input) as a 12 bit thing
-# then do some magic Mike dance using the ISR as a swap space, to finally 
-# get our outputs right and ready for the chip input pins.
-# This is done twice, so we latch the register, then the value
-# appropriately, by using the side-set stuff (thankfully, those two 
-# bidir pins are sequential).
-# The state machine runs at 2MHz no problem, but if the program here is 
-# optimized a bit, might need to tweak.
 
+# Pin layout and mapping between TT Z80 and Pico
 #
-# ->Z80 |       | /wait |       |  mux  |    data-in    |
-# TinyT | 4 uo  | 4 ui  | 4 uo  | 4 ui  |     8 uio     |
-#       |0 1 2 3|0 1 2 3|4 5 6 7|4 5 6 7|0 1 2 3 4 5 6 7|
-# Z80-> | addr  |       | addr  |       |    data-out   |
-# ------+-------+-------+-------+-------+---------------+
-# Pico  |5 6 7 8|9 0 1 2|3 4 5 6|7 8 9 0|1 2 3 4 5 6 7 8|
-# PIO   |       |  set  |       | side  |      out      |
-#       |<--in 24-bit---------------------------------->|
-
 
 #                                        / / / /
 #                                       |b n i w|
@@ -90,8 +68,6 @@ from rp2 import PIO
 # PIO   |      out      | side  |       |  set  |       |
 #       |<-----------------in 24-bit------------------->|
 
-
-
 #           pin ui: 3210
 CPU_EXEC        = 0b1111
 CPU_WAIT        = 0b1110
@@ -106,163 +82,149 @@ PIN_CTRL_IORQ   = 2+0   # in_base + 2   UO_OUT2
 PIN_CTRL_RD     = 3+0   # in_base + 3   UO_OUT3
 PIN_CTRL_WR     = 4+4   # in_base + 8   UO_OUT4
 
-@rp2.asm_pio(autopull=False, autopush=False, 
-             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
-             in_shiftdir=PIO.SHIFT_LEFT,
-             sideset_init=(PIO.OUT_LOW,)*2,
-             set_init=(PIO.OUT_HIGH,)*4,
-             out_init=(PIO.IN_LOW,)*8)
-def z80_read_handler():
-    # set(pins, CPU_EXEC)    # CAN BE OPTIMIZED ???   # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
-    # nop()                       .side(MUX_CTRL)     # CAN BE OPTIMIZED ???
-    # wait(0, pin, PIN_CTRL_RD)                       # gpio[in_base + PIN_CTRL_RD]
-    # set(pins, CPU_WAIT)                             # gpio[set_base]                <= [/WAIT=0, /int=1, /nmi=1, /busreq=1]
-    # nop()                       .side(MUX_ADDR_HI)  # CAN BE OPTIMIZED ???
-    # in_(pins, 12)               .side(MUX_ADDR_HI)  # gpio[in_base + 0..11]         => ISR, ISR << 12
-    # nop()                       .side(MUX_ADDR_LO)
-    # in_(pins, 12)               .side(MUX_ADDR_LO)  # gpio[in_base + 0..11]         => ISR, ISR << 12
-    # push(block)
-    # pull(block)
-    # out(pins, 8)                .side(MUX_CTRL)     # gpio[out_base + 0..7]         <= OSR, OSR >> 8
-    # set(pins, CPU_EXEC)                             # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
-    # wait(1, pin, PIN_CTRL_RD)                       # gpio[in_base + PIN_CTRL_RD]
+# @rp2.asm_pio(autopull=False, autopush=False, 
+#              out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+#              in_shiftdir=PIO.SHIFT_LEFT,
+#              sideset_init=(PIO.OUT_LOW,)*2,
+#              set_init=(PIO.OUT_HIGH,)*4,
+#              out_init=(PIO.IN_LOW,)*8)
+# def z80_read_handler():
+#     set(pins, 0b1111)    # CAN BE OPTIMIZED ???     # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+#     nop()                       .side(0b10)         # CAN BE OPTIMIZED ???
+#     wait(0, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
+#     set(pins, 0b1110)                               # gpio[set_base]                <= [/WAIT=0, /int=1, /nmi=1, /busreq=1]
+#     nop()                       .side(0b01)         # CAN BE OPTIMIZED ???
+#     in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+#     nop()                       .side(0b00)
+#     in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
+#     push(block)
+#     pull(block)
+#     out(pins, 8)                .side(0b10)         # gpio[out_base + 0..7]         <= OSR, OSR >> 8
+#     set(pins, 0b1111)                               # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
+#     wait(1, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
 
-    set(pins, 0b1111)    # CAN BE OPTIMIZED ???     # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
-    nop()                       .side(0b10)         # CAN BE OPTIMIZED ???
-    wait(0, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
-    set(pins, 0b1110)                               # gpio[set_base]                <= [/WAIT=0, /int=1, /nmi=1, /busreq=1]
-    nop()                       .side(0b01)         # CAN BE OPTIMIZED ???
-    in_(pins, 12)               .side(0b01)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    nop()                       .side(0b00)
-    in_(pins, 12)               .side(0b00)         # gpio[in_base + 0..11]         => ISR, ISR << 12
-    push(block)
-    pull(block)
-    out(pins, 8)                .side(0b10)         # gpio[out_base + 0..7]         <= OSR, OSR >> 8
-    set(pins, 0b1111)                               # gpio[set_base]                <= [/wait=1, /int=1, /nmi=1, /busreq=1]
-    wait(1, pin, 3)                                 # gpio[in_base + PIN_CTRL_RD]
+# @rp2.asm_pio(autopull=False, autopush=False, 
+#              out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+#              in_shiftdir=PIO.SHIFT_LEFT,
+#              sideset_init=(PIO.OUT_LOW,)*2,
+#              # set_init=(PIO.OUT_HIGH,)*4,
+#              set_init=(PIO.OUT_HIGH,)*1,
+#              out_init=(PIO.OUT_LOW,)*8)
+# def z80_readwrite_handler():
+#     # NOTE: that Z80 has all control signals inverted (active low)!
+#     set(y, 0b01) # TODO: support for IORQ+WR
+#                  # currently sensitive only to:     1) RD|*
+#                  #                                  2) (notRD)|MREQ|(notM1)
+#                  # missing:                         *) (notRD)|IORQ
 
-@rp2.asm_pio(autopull=False, autopush=False, 
-             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
-             in_shiftdir=PIO.SHIFT_LEFT,
-             sideset_init=(PIO.OUT_LOW,)*2,
-             # set_init=(PIO.OUT_HIGH,)*4,
-             set_init=(PIO.OUT_HIGH,)*1,
-             out_init=(PIO.OUT_LOW,)*8)
-def z80_readwrite_handler():
-    # NOTE: that Z80 has all control signals inverted (active low)!
-    set(y, 0b01) # TODO: support for IORQ+WR
-                 # currently sensitive only to:     1) RD|*
-                 #                                  2) (notRD)|MREQ|(notM1)
-                 # missing:                         *) (notRD)|IORQ
+#                                 # mux:CTRL
+#     set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
 
-                                # mux:CTRL
-    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+#     label("busy_wait")
+#     jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
+#     jmp("read")                 .side(0b10)
 
-    label("busy_wait")
-    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
-    jmp("read")                 .side(0b10)
-
-    label("not_rd")
-    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
-    mov(x, isr)
-    mov(isr, null)                                  # clear ISR!
-    jmp(x_not_y, "busy_wait")
+#     label("not_rd")
+#     in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
+#     mov(x, isr)
+#     mov(isr, null)                                  # clear ISR!
+#     jmp(x_not_y, "busy_wait")
 
 
-    label("write")              # mux:CTRL          # will push 2 packets, see run()
-    nop()                       .side(0b10)         #                                   <-- could remove
-    # # wait(0, pin, 8)             .side(0b10)         # ************
-    in_(pins, 24)               .side(0b10)         #
-                                # mux:ADDR_HI       #
-    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
-    in_(pins, 12)               .side(0b01)         #
-                                # mux:ADDR_LO       #
-    nop()                       .side(0b00)         #
-    in_(pins, 12)               .side(0b00)         #
-                                # mux:CTRL          #
-    push(block)                 .side(0b10)         # packet #2: ADDRess bus
-    # # wait(1, pin, 8)             .side(0b10)         # wait until WR finishes
-    pull(block) # dummy pull
-    jmp("busy_wait")
+#     label("write")              # mux:CTRL          # will push 2 packets, see run()
+#     nop()                       .side(0b10)         #                                   <-- could remove
+#     # # wait(0, pin, 8)             .side(0b10)         # ************
+#     in_(pins, 24)               .side(0b10)         #
+#                                 # mux:ADDR_HI       #
+#     push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+#     in_(pins, 12)               .side(0b01)         #
+#                                 # mux:ADDR_LO       #
+#     nop()                       .side(0b00)         #
+#     in_(pins, 12)               .side(0b00)         #
+#                                 # mux:CTRL          #
+#     push(block)                 .side(0b10)         # packet #2: ADDRess bus
+#     # # wait(1, pin, 8)             .side(0b10)         # wait until WR finishes
+#     pull(block) # dummy pull
+#     jmp("busy_wait")
 
 
-    label("read")               # mux:CTRL          # will push 2 and pop 1 packet, see run()
-    nop()                       .side(0b10)         #                                   <-- could remove
-    in_(pins, 24)               .side(0b10)         #
-                                # mux:ADDR_HI       #
-    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
-    in_(pins, 12)               .side(0b01)         #
-                                # mux:ADDR_LO       #
-    nop()                       .side(0b00)         #
-    in_(pins, 12)               .side(0b00)         #
-    push(block)                                     # packet #2: ADDRess bus
-                                                    #
-    set(pins, 0)                                    # /WAIT <= 0, Z80 is PAUSED until 
-    pull(block)                                     #   wait for packet from RAM to arrive, see run()
-    out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
-    out(pins, 8)                                    #   put RAM value Z80 DATA bus
-                                # mux:CTRL          #
-    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
-    wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
-    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
+#     label("read")               # mux:CTRL          # will push 2 and pop 1 packet, see run()
+#     nop()                       .side(0b10)         #                                   <-- could remove
+#     in_(pins, 24)               .side(0b10)         #
+#                                 # mux:ADDR_HI       #
+#     push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+#     in_(pins, 12)               .side(0b01)         #
+#                                 # mux:ADDR_LO       #
+#     nop()                       .side(0b00)         #
+#     in_(pins, 12)               .side(0b00)         #
+#     push(block)                                     # packet #2: ADDRess bus
+#                                                     #
+#     set(pins, 0)                                    # /WAIT <= 0, Z80 is PAUSED until 
+#     pull(block)                                     #   wait for packet from RAM to arrive, see run()
+#     out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
+#     out(pins, 8)                                    #   put RAM value Z80 DATA bus
+#                                 # mux:CTRL          #
+#     set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+#     wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
+#     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
-@rp2.asm_pio(autopull=False, autopush=False, 
-             out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
-             in_shiftdir=PIO.SHIFT_LEFT,
-             sideset_init=(PIO.OUT_LOW,)*2,
-             # set_init=(PIO.OUT_HIGH,)*4,
-             set_init=(PIO.OUT_HIGH,)*1,
-             out_init=(PIO.OUT_LOW,)*8)
-def z80_readwrite_handler2():
-    # NOTE: that Z80 has all control signals inverted (active low)!
-    set(y, 0b01) # TODO: support for IORQ+WR
-                 # currently sensitive only to:     1) RD|*
-                 #                                  2) (notRD)|MREQ|(notM1)
-                 # missing:                         *) (notRD)|IORQ
-    label("busy_signal_change_wait") # TODO
-                                # mux:CTRL
-    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+# @rp2.asm_pio(autopull=False, autopush=False, 
+#              out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
+#              in_shiftdir=PIO.SHIFT_LEFT,
+#              sideset_init=(PIO.OUT_LOW,)*2,
+#              # set_init=(PIO.OUT_HIGH,)*4,
+#              set_init=(PIO.OUT_HIGH,)*1,
+#              out_init=(PIO.OUT_LOW,)*8)
+# def z80_readwrite_handler2():
+#     # NOTE: that Z80 has all control signals inverted (active low)!
+#     set(y, 0b01) # TODO: support for IORQ+WR
+#                  # currently sensitive only to:     1) RD|*
+#                  #                                  2) (notRD)|MREQ|(notM1)
+#                  # missing:                         *) (notRD)|IORQ
+#     label("busy_signal_change_wait") # TODO
+#                                 # mux:CTRL
+#     set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
 
-    label("busy_wait")
-    nop()                       .side(0b10)
-    nop()                       .side(0b10)
-    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
-    jmp("readwrite")            .side(0b10)
+#     label("busy_wait")
+#     nop()                       .side(0b10)
+#     nop()                       .side(0b10)
+#     jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
+#     jmp("readwrite")            .side(0b10)
 
-    label("not_rd")
-    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
-    mov(x, isr)                 .side(0b10)
-    mov(isr, null)              .side(0b10)         # clear ISR!
-    jmp(x_not_y, "busy_wait")   .side(0b10)
+#     label("not_rd")
+#     in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
+#     mov(x, isr)                 .side(0b10)
+#     mov(isr, null)              .side(0b10)         # clear ISR!
+#     jmp(x_not_y, "busy_wait")   .side(0b10)
 
-    label("readwrite")          # mux:CTRL          # will push 2 and pop 1 packet, see run()
-    set(pins, 0)                .side(0b10)         # /WAIT <= 0, Z80 is PAUSED until 
-    in_(pins, 24)               .side(0b10)         #
-                                # mux:ADDR_HI       #
-    nop()                       .side(0b01)
-    nop()                       .side(0b01)                                
-    push(block)                 .side(0b01)         # packet #1: DATA bus + flags
-    in_(pins, 12)               .side(0b01)         #
-                                # mux:ADDR_LO       #
-    nop()                       .side(0b00)
-    nop()                       .side(0b00)         #
-    nop()                       .side(0b00)
-    in_(pins, 12)               .side(0b00)         #
-    push(block)                                     # packet #2: ADDRess bus
-                                                    #
-                                # mux:CTRL          #
-    pull(block)                 .side(0b10)         #   wait for packet from RAM to arrive, see run()
+#     label("readwrite")          # mux:CTRL          # will push 2 and pop 1 packet, see run()
+#     set(pins, 0)                .side(0b10)         # /WAIT <= 0, Z80 is PAUSED until 
+#     in_(pins, 24)               .side(0b10)         #
+#                                 # mux:ADDR_HI       #
+#     nop()                       .side(0b01)
+#     nop()                       .side(0b01)                                
+#     push(block)                 .side(0b01)         # packet #1: DATA bus + flags
+#     in_(pins, 12)               .side(0b01)         #
+#                                 # mux:ADDR_LO       #
+#     nop()                       .side(0b00)
+#     nop()                       .side(0b00)         #
+#     nop()                       .side(0b00)
+#     in_(pins, 12)               .side(0b00)         #
+#     push(block)                                     # packet #2: ADDRess bus
+#                                                     #
+#                                 # mux:CTRL          #
+#     pull(block)                 .side(0b10)         #   wait for packet from RAM to arrive, see run()
 
-    nop()                       .side(0b10)
-    nop()                       .side(0b10)         #
-    jmp(pin, "busy_signal_change_wait") .side(0b10)
+#     nop()                       .side(0b10)
+#     nop()                       .side(0b10)         #
+#     jmp(pin, "busy_signal_change_wait") .side(0b10)
 
-    out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
-    out(pins, 8)                                    #   put RAM value Z80 DATA bus
-                                # mux:CTRL          #
-    set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
-    wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
-    out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
+#     out(pindirs, 8) # maybe put 1 instruction above #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
+#     out(pins, 8)                                    #   put RAM value Z80 DATA bus
+#                                 # mux:CTRL          #
+#     set(pins, 1)                .side(0b10)         # /WAIT <= 1, Z80 is free to run
+#     wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
+#     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
 
 @rp2.asm_pio(autopull=False, autopush=False, 
@@ -284,7 +246,7 @@ def z80_clocking_handler():
     in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
     mov(x, isr)                 .side(0b10)
     mov(isr, null)              .side(0b10)         # clear ISR!
-    set(y, 0b01) # TODO: support for IORQ+WR
+    set(y, 0b01) # TODO: support for IORQ+WR and IORQ+M1
                  # currently sensitive only to:     1) RD|*
                  #                                  2) (notRD)|MREQ|(notM1)
                  # missing:                         *) (notRD)|IORQ    
@@ -386,15 +348,6 @@ class Z80PIO:
 
 
         self.sm.active(True)
-
-    # def update(self, rom, addr_mask=0xFFFF, verbose=False):
-    #     #addr = self.sm.get() & 0b1111_0000_1111_1111_0000_1111
-    #     x = self.sm.get()
-    #     addr = ((x>>8) & 0xF000) | ((x>>4) & 0x0FF0) | (x & 0x000F)
-    #     if verbose:
-    #         print(hex(x), hex(addr), hex(rom[addr & addr_mask]))
-    #     self.sm.put(rom[addr & addr_mask])
-    #     return addr
 
     def run(self, ram, addr_mask:int=0xFFFF, verbose:bool=False):
         return self._run(ram, addr_mask, verbose)
