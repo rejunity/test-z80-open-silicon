@@ -57,16 +57,18 @@ from rp2 import PIO
 #                                       |s i t i|
 #                                       |r     t|
 #                                               
-# ->Z80 |    data-in    |  mux  |       |b n I W|       |            W:/WAIT I:/INT n:/NMI b:/BUSRQ
-# TinyT |     8 uio     | 4 ui  | 4 uo  | 4 ui  | 4 uo  |
-#       |7 6 5 4 3 2 1 0|7 6 . .|7 6 5 4|3 2 1 0|3 2 1 0|
-# Z80-> |    data-out   |       |addr_lo|       |addr_lo| (mux=00..)
-#       |    ---//---   |       |addr_hi|       |addr_hi| (mux=01..)
-#       |    ---//---   |       |b H f W|       |R I M 1| (mux=1x..) 1:/M1 M:/MREQ I:/IORQ R:/RD _ W:/WR f:/RFSH: H:/HALT b:/BUSAK
-# ------+---------------+-------+-------+-------+-------+
-# Pico  |8 7 6 5 4 3 2 1|0 9 . .|6 5 4 3|2 1 0 9|8 7 6 5|
-# PIO   |      out      | side  |       |  set  |       |
-#       |<-----------------in 24-bit------------------->|
+# ->Z80 |    data-in    |  mux  |       |b n I W|       |         | W:/WAIT I:/INT n:/NMI b:/BUSRQ
+# TinyT |     8 uio     | 4 ui  | 4 uo  | 4 ui  | 4 uo  |      clk|
+#       |7 6 5 4 3 2 1 0|7 6 . .|7 6 5 4|3 2 1 0|3 2 1 0|         |
+# Z80-> |    data-out   |       |addr_lo|       |addr_lo|         | (mux=00..)
+#       |    ---//---   |       |addr_hi|       |addr_hi|         | (mux=01..)
+#       |    ---//---   |       |b H f W|       |R I M 1|         | (mux=1x..) 1:/M1 M:/MREQ I:/IORQ R:/RD _ W:/WR f:/RFSH: H:/HALT b:/BUSAK
+# ------+---------------+-------+-------+-------+-------+---------+
+# Pico  |8 7 6 5 4 3 2 1|0 9 . .|6 5 4 3|2 1 0 9|8 . . .|. . . . 0|
+# PIO   |      out      | side  |               |j      |   set   |
+#       |               |       |               |m      |         |
+#       |               |       |               |p      |         |
+#       |<-----------------in 24-bit------------------->| 
 
 #           pin ui: 3210
 CPU_EXEC        = 0b1111
