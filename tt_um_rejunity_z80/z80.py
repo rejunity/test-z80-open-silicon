@@ -249,10 +249,10 @@ def z80_clocking_handler():
     in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
     mov(x, isr)                 .side(0b10)
     mov(isr, null)              .side(0b10)         # clear ISR!
-    set(y, 0b01) # TODO: support for IORQ+WR and IORQ+M1
-                 # currently sensitive only to:     1) RD|*
-                 #                                  2) (notRD)|MREQ|(notM1)
-                 # missing:                         *) (notRD)|IORQ    
+    # set(y, 0b01) # TODO: support for IORQ+WR and IORQ+M1
+    #              # currently sensitive only to:     1) RD|*
+    #              #                                  2) (notRD)|MREQ|(notM1)
+    #              # missing:                         *) (notRD)|IORQ    
     jmp(x_not_y, "clock_ph2")   .side(0b10)         # if neither READ or WRITE happened, jump to finish the 2nd phase of the clock cycle
 
     ################################################# To process READ or WRITE we will push 2 and pop 1 packet, see run()
@@ -260,26 +260,36 @@ def z80_clocking_handler():
     label("read")               # mux:CTRL          #
     set(pins, 0)                .side(0b10)         # clk negedge  ^^\__
                                                     #
-    in_(pins, 24)               .side(0b10)         #
+    mov(osr, pins)              .side(0b10)         # 
+    out(null, 16)               .side(0b10)         # 
+    in_(osr, 8)                 .side(0b10)         # ISR={value}
+    mov(osr, pins)              .side(0b10)         # 
+    out(null, 8)                .side(0b10)         # 
+    in_(osr, 4)                 .side(0b10)         # ISR={value, flags_bHfW}
+    in_(pins, 4)                .side(0b10)         # ISR={value, flags_bHfW, flags_RIM1}
                                 # mux:ADDR_HI       #
-    push(block)                 .side(0b01).delay(3)#   PUSH packet #1: DATA bus + flags
+    nop()                       .side(0b01).delay(3)#   wait for mux to stabilize
+    
+    # in_(pins, 24)               .side(0b10)         #
+                                # mux:ADDR_HI       #
+    # push(block)                 .side(0b01).delay(3)#   PUSH packet #1: DATA bus + flags
     # nop()                       .side(0b01)         #
     # nop()                       .side(0b01)         #   wait for mux to stabilize
     # in_(pins, 12)               .side(0b01)         # 
 
-    mov(osr, pins)              .side(0b01)         # Set OSR to input pins
-    out(null, 8)                .side(0b01)         # Shift out low 4 bits and 4 dummy bits
-    in_(osr, 4)                 .side(0b01)         # High 4 bits of address now in ISR
-    in_(pins, 4)                .side(0b01)         # Shift in low 4 bits
+    mov(osr, pins)              .side(0b01)         # 
+    out(null, 8)                .side(0b01)         # 
+    in_(osr, 4)                 .side(0b01)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi_4bit}
+    in_(pins, 4)                .side(0b01)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi}
 
                                 # mux:ADDR_LO       #
     nop()                       .side(0b00).delay(3)#
     # nop()                       .side(0b00)         #
     # nop()                       .side(0b00)         #
-    mov(osr, pins)              .side(0b00)         # Set OSR to input pins
-    out(null, 8)                .side(0b00)         # Shift out low 4 bits and 4 dummy bits
-    in_(osr, 4)                 .side(0b00)         # High 4 bits of address now in ISR
-    in_(pins, 4)                .side(0b00)         # Shift in low 4 bits
+    mov(osr, pins)              .side(0b00)         #
+    out(null, 8)                .side(0b00)         #
+    in_(osr, 4)                 .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo_4bit}
+    in_(pins, 4)                .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo}
     # nop()                       .side(0b00)         #
     # nop()                       .side(0b00)         #
     # nop()                       .side(0b00)         #
@@ -288,7 +298,7 @@ def z80_clocking_handler():
                                                     #
                                 # mux:CTRL          #
     pull(block)                 .side(0b10)         #   WAIT for packet from RAM to arrive, see run()
-    jmp(pin, "new_clock")       .side(0b10)         # WRITE ends here
+    ### jmp(pin, "new_clock")       .side(0b10)         # WRITE ends here
 
     out(pindirs, 8)                                 #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
     out(pins, 8)                                    #   put RAM value on the Z80 DATA bus
@@ -366,6 +376,7 @@ class Z80PIO:
             out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
 
 
+        self.sm.exec("set(y, 0b01)")
         self.sm.active(True)
 
     def run(self, ram, addr_mask:int=0xFFFF, verbose:bool=False):
@@ -378,17 +389,24 @@ class Z80PIO:
         execution_reached_past_addr_0:bool = False
         while True:
             x:int       = int(self.sm.get()) # 1st packet contains flags & value from the DATA bus
-            y:int       = int(self.sm.get()) # 2nd packet contains lo & hi bits of the ADDRess bus
-            rd:bool     = (x &  0x08) == 0
-            wr:bool     = (x & 0x100) == 0
-            halt:bool   = (x & 0x400) == 0
+            # y:int       = int(self.sm.get()) # 2nd packet contains lo & hi bits of the ADDRess bus
+            y:int       = x
+            flags       = ((x>>16) & 0xFF)
+            rd:bool     = (flags & 0x08) == 0
+            wr:bool     = (flags & 0x10) == 0
+            halt:bool   = (flags & 0x40) == 0
+            m1          = (flags & 0x01) == 0
+            mreq        = (flags & 0x02) == 0
+            # rd:bool     = (x &  0x08) == 0
+            # wr:bool     = (x & 0x100) == 0
+            # halt:bool   = (x & 0x400) == 0
             # addr:int    = (((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)) & addr_mask
             addr:int    = y & addr_mask
+            value       = (x>>24) & 0xFF
             if verbose:
-                m1      = (x &  0x01) == 0
-                mreq    = (x &  0x02) == 0                
-                value   = ((x>>16) & 0xFF)
-                flags   = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
+                # m1      = (x &  0x01) == 0
+                # mreq    = (x &  0x02) == 0
+                # value   = ((x>>16) & 0xFF)
                 print(
                     "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
                     "addr", hex(addr), hex(value) if wr else hex(int(ram[addr & addr_mask])),\
@@ -401,20 +419,20 @@ class Z80PIO:
                                                                 # 3) 0x00 sets PICO pindirs back to read
                 # reads += 1
             elif wr:
-                value = (x>>16) & 0xFF
+                # value = (x>>16) & 0xFF
                 ram[addr] = value
                 self.sm.put(0) # dummy packet
             else:
                 self.sm.put(0) # dummy packet
 
             if halt:
-                flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
-                return addr, flags
+                # flags = (((x>>4) & 0xF0) | (x & 0xF))
+                return addr, 0x100-flags
 
             if (addr & addr_mask) == 0:
-                flags = 0x100 - (((x>>4) & 0xF0) | (x & 0xF))
+                # flags = (((x>>4) & 0xF0) | (x & 0xF))
                 if execution_reached_past_addr_0:
-                    return addr, flags
+                    return addr, 0x100-flags
 
             execution_reached_past_addr_0 = addr > 0
 
