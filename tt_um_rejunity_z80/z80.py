@@ -239,9 +239,9 @@ def z80_clocking_handler():
     label("new_clock")
     ################################################# Detect if READ or WRITE is happening
                                 # mux:CTRL          #
-    set(pins, 1)                .side(0b10)         # CLK poesedge __/^^
-    nop()                       .side(0b10)
-    nop()                       .side(0b10)         # wait for mux to stabilize
+    set(pins, 1)                .side(0b10).delay(2) # CLK poesedge __/^^
+    # nop()                       .side(0b10)
+    # nop()                       .side(0b10)         # wait for mux to stabilize
     jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
     jmp("read")                 .side(0b10)
 
@@ -262,16 +262,29 @@ def z80_clocking_handler():
                                                     #
     in_(pins, 24)               .side(0b10)         #
                                 # mux:ADDR_HI       #
-    push(block)                 .side(0b01)         #   PUSH packet #1: DATA bus + flags
-    nop()                       .side(0b01)         #
-    nop()                       .side(0b01)         #   wait for mux to stabilize
-    in_(pins, 12)               .side(0b01)         # 
+    push(block)                 .side(0b01).delay(3)#   PUSH packet #1: DATA bus + flags
+    # nop()                       .side(0b01)         #
+    # nop()                       .side(0b01)         #   wait for mux to stabilize
+    # in_(pins, 12)               .side(0b01)         # 
+
+    mov(osr, pins)              .side(0b01)         # Set OSR to input pins
+    out(null, 8)                .side(0b01)         # Shift out low 4 bits and 4 dummy bits
+    in_(osr, 4)                 .side(0b01)         # High 4 bits of address now in ISR
+    in_(pins, 4)                .side(0b01)         # Shift in low 4 bits
+
                                 # mux:ADDR_LO       #
-    nop()                       .side(0b00)         #
-    nop()                       .side(0b00)         #
-    nop()                       .side(0b00)         #
-    in_(pins, 12)               .side(0b00)         #
-    push(block)                                     #   PUSH packet #2: ADDRess bus
+    nop()                       .side(0b00).delay(3)#
+    # nop()                       .side(0b00)         #
+    # nop()                       .side(0b00)         #
+    mov(osr, pins)              .side(0b00)         # Set OSR to input pins
+    out(null, 8)                .side(0b00)         # Shift out low 4 bits and 4 dummy bits
+    in_(osr, 4)                 .side(0b00)         # High 4 bits of address now in ISR
+    in_(pins, 4)                .side(0b00)         # Shift in low 4 bits
+    # nop()                       .side(0b00)         #
+    # nop()                       .side(0b00)         #
+    # nop()                       .side(0b00)         #
+    # in_(pins, 12)               .side(0b00)         #
+    push(block)                 .side(0b10)         #   PUSH packet #2: ADDRess bus
                                                     #
                                 # mux:CTRL          #
     pull(block)                 .side(0b10)         #   WAIT for packet from RAM to arrive, see run()
@@ -281,14 +294,14 @@ def z80_clocking_handler():
     out(pins, 8)                                    #   put RAM value on the Z80 DATA bus
                                                     #   and hold results for 1 more clock cycle
 
-    set(pins, 1)                .delay(2)           # CLK poesedge __/^^
-    nop()                       .delay(3)
-    nop()                       .delay(3)
+    set(pins, 1)                .delay(3)           # CLK poesedge __/^^
+    # nop()                       .delay(3)
+    # nop()                       .delay(3)
 
     label("clock_ph2")
-    set(pins, 0)                .delay(1)           # clk negedge  ^^\__
-    nop()                       .delay(3)
-    nop()                       .delay(3)
+    set(pins, 0)                .delay(2)           # clk negedge  ^^\__
+    # nop()                       .delay(3)
+    # nop()                       .delay(3)
 
     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode
                                                     # READ ends here
@@ -369,7 +382,8 @@ class Z80PIO:
             rd:bool     = (x &  0x08) == 0
             wr:bool     = (x & 0x100) == 0
             halt:bool   = (x & 0x400) == 0
-            addr:int    = (((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)) & addr_mask
+            # addr:int    = (((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)) & addr_mask
+            addr:int    = y & addr_mask
             if verbose:
                 m1      = (x &  0x01) == 0
                 mreq    = (x &  0x02) == 0                
