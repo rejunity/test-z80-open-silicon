@@ -240,8 +240,6 @@ def z80_clocking_handler():
     ################################################# Detect if READ or WRITE is happening
                                 # mux:CTRL          #
     set(pins, 1)                .side(0b10).delay(2) # CLK poesedge __/^^
-    # nop()                       .side(0b10)
-    # nop()                       .side(0b10)         # wait for mux to stabilize
     jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
     jmp("read")                 .side(0b10)
 
@@ -266,34 +264,19 @@ def z80_clocking_handler():
     mov(osr, pins)              .side(0b10)         # 
     out(null, 8)                .side(0b10)         # 
     in_(osr, 4)                 .side(0b10)         # ISR={value, flags_bHfW}
-    in_(pins, 4)                .side(0b10)         # ISR={value, flags_bHfW, flags_RIM1}
+    in_(pins, 4)                .side(0b01).delay(3)         # ISR={value, flags_bHfW, flags_RIM1}
                                 # mux:ADDR_HI       #
-    nop()                       .side(0b01).delay(3)#   wait for mux to stabilize
-    
-    # in_(pins, 24)               .side(0b10)         #
-                                # mux:ADDR_HI       #
-    # push(block)                 .side(0b01).delay(3)#   PUSH packet #1: DATA bus + flags
-    # nop()                       .side(0b01)         #
-    # nop()                       .side(0b01)         #   wait for mux to stabilize
-    # in_(pins, 12)               .side(0b01)         # 
-
+    # nop()                       .side(0b01).delay(3)#   wait for mux to stabilize
     mov(osr, pins)              .side(0b01)         # 
     out(null, 8)                .side(0b01)         # 
     in_(osr, 4)                 .side(0b01)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi_4bit}
-    in_(pins, 4)                .side(0b01)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi}
-
+    in_(pins, 4)                .side(0b00).delay(3)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi}
                                 # mux:ADDR_LO       #
-    nop()                       .side(0b00).delay(3)#
-    # nop()                       .side(0b00)         #
-    # nop()                       .side(0b00)         #
+    # nop()                       .side(0b00).delay(3)#
     mov(osr, pins)              .side(0b00)         #
     out(null, 8)                .side(0b00)         #
     in_(osr, 4)                 .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo_4bit}
     in_(pins, 4)                .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo}
-    # nop()                       .side(0b00)         #
-    # nop()                       .side(0b00)         #
-    # nop()                       .side(0b00)         #
-    # in_(pins, 12)               .side(0b00)         #
     push(block)                 .side(0b10)         #   PUSH packet #2: ADDRess bus
                                                     #
                                 # mux:CTRL          #
@@ -387,50 +370,76 @@ class Z80PIO:
         # reads:int = 0
         # writes:int = 0
         execution_reached_past_addr_0:bool = False
+        FSTAT   = ptr32(0x50200004)
+        FLEVEL  = ptr32(0x5020000C)
+        TXF0    = ptr32(0x50200010)
+        RXF0    = ptr32(0x50200020)
         while True:
-            x:int       = int(self.sm.get()) # 1st packet contains flags & value from the DATA bus
-            # y:int       = int(self.sm.get()) # 2nd packet contains lo & hi bits of the ADDRess bus
-            y:int       = x
-            flags       = ((x>>16) & 0xFF)
-            rd:bool     = (flags & 0x08) == 0
-            wr:bool     = (flags & 0x10) == 0
-            halt:bool   = (flags & 0x40) == 0
-            m1          = (flags & 0x01) == 0
-            mreq        = (flags & 0x02) == 0
-            # rd:bool     = (x &  0x08) == 0
-            # wr:bool     = (x & 0x100) == 0
-            # halt:bool   = (x & 0x400) == 0
-            # addr:int    = (((y>>8) & 0xF000) | ((y>>4) & 0x0FF0) | (y & 0x000F)) & addr_mask
-            addr:int    = y & addr_mask
-            value       = (x>>24) & 0xFF
+            # while int(self.sm.rx_fifo()) == 0:
+            #     fstat:int = FSTAT[0]
+            #     flevel:int = FLEVEL[0]
+            #     print((fstat >> 4) & 0xF, fstat & 0xF, flevel & 0xF, (flevel >> 4) & 0xF)
+            #     # pass
+            # # print("---", FSTAT[0], FLEVEL[0])
+            # # print("---", FSTAT[0] & (1 << 16), FLEVEL[0] & 0xF, (FLEVEL[0] >> 8) & 0xF)
+            # fstat:int = FSTAT[0]
+            # flevel:int = FLEVEL[0]
+            # print("---", (fstat >> 4) & 0xF, fstat & 0xF, flevel & 0xF, (flevel >> 4) & 0xF)
+
+            # while (FSTAT[0] & (1 << 16)) != 0:
+            #     dummy = int(FSTAT[0])  # Force re-read each loop
+            #     # pass
+            # while ((FLEVEL[0] >> 8) & 0xF) == 0 and ((FLEVEL[0]) & 0xF) == 0:
+            #     print(FSTAT, FLEVEL)
+                # pass
+
+            # flevel:int = FLEVEL[0]
+            # while ((flevel >> 4) & 0xF) == 0:
+            #     flevel = FLEVEL[0]
+            while ((FLEVEL[0] >> 4) & 0xF) == 0:
+                pass
+            x:int = RXF0[0]
+            # x:int       = int(self.sm.get()) # packet contains DATA bus value [31..24], flags [23..16] and ADDRess [15..0]
+            # rd:bool     = (x & 0x08_0000) == 0
+            wr:bool     = (x & 0x10_0000) == 0
+            addr:int    = x & addr_mask
             if verbose:
+                m1      = (x & 0x01_0000) == 0
+                mreq    = (x & 0x02_0000) == 0
+                rd      = (x & 0x08_0000) == 0
+                halt    = (x & 0x40_0000) == 0
+                value   = (x>>24) & 0xFF
                 # m1      = (x &  0x01) == 0
                 # mreq    = (x &  0x02) == 0
                 # value   = ((x>>16) & 0xFF)
                 print(
                     "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
-                    "addr", hex(addr), hex(value) if wr else hex(int(ram[addr & addr_mask])),\
-                    hex(y), hex(x),\
+                    "addr", hex(addr), hex(value) if wr else hex(int(ram[addr])),\
+                    hex(x),\
                     "r/t:", self.sm.rx_fifo(), self.sm.tx_fifo())
-            if rd:
-                value_from_ram = ram[addr]
-                self.sm.put((value_from_ram << 8) | 0x00_00_FF) # 1) 0xFF sets PICO pindirs to write
-                                                                # 2) PICO puts byte from RAM on Z80's data bus
-                                                                # 3) 0x00 sets PICO pindirs back to read
-                # reads += 1
-            elif wr:
-                # value = (x>>16) & 0xFF
+            # if rd:
+            if wr:
+                value   = (x>>24) & 0xFF
                 ram[addr] = value
-                self.sm.put(0) # dummy packet
+                TXF0[0] = int(0)
+                # self.sm.put(0) # dummy packet                
             else:
-                self.sm.put(0) # dummy packet
+                value_from_ram = ram[addr]
+                write_packet = (value_from_ram << 8) | 0x00_00_FF
+                TXF0[0] = write_packet
+                # self.sm.put((value_from_ram << 8) | 0x00_00_FF) # 1) 0xFF sets PICO pindirs to write
+                #                                                 # 2) PICO puts byte from RAM on Z80's data bus
+                #                                                 # 3) 0x00 sets PICO pindirs back to read
+                # reads += 1
+                # self.sm.put(0) # dummy packet
+    
+                halt:bool   = (x & 0x40_0000) == 0
+                if halt:
+                    flags       = (x>>16) & 0xFF
+                    return addr, 0x100-flags
 
-            if halt:
-                # flags = (((x>>4) & 0xF0) | (x & 0xF))
-                return addr, 0x100-flags
-
-            if (addr & addr_mask) == 0:
-                # flags = (((x>>4) & 0xF0) | (x & 0xF))
+            if addr == 0:
+                flags       = (x>>16) & 0xFF
                 if execution_reached_past_addr_0:
                     return addr, 0x100-flags
 
