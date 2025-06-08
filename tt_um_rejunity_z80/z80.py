@@ -356,59 +356,30 @@ class Z80PIO:
         # reads:int = 0
         # writes:int = 0
         execution_reached_past_addr_0:bool = False
-        FSTAT   = ptr32(0x50200004)
         FLEVEL  = ptr32(0x5020000C)
         TXF0    = ptr32(0x50200010)
         RXF0    = ptr32(0x50200020)
         while True:
-            # while int(self.sm.rx_fifo()) == 0:
-            #     fstat:int = FSTAT[0]
-            #     flevel:int = FLEVEL[0]
-            #     print((fstat >> 4) & 0xF, fstat & 0xF, flevel & 0xF, (flevel >> 4) & 0xF)
-            #     # pass
-            # # print("---", FSTAT[0], FLEVEL[0])
-            # # print("---", FSTAT[0] & (1 << 16), FLEVEL[0] & 0xF, (FLEVEL[0] >> 8) & 0xF)
-            # fstat:int = FSTAT[0]
-            # flevel:int = FLEVEL[0]
-            # print("---", (fstat >> 4) & 0xF, fstat & 0xF, flevel & 0xF, (flevel >> 4) & 0xF)
-
-            # while (FSTAT[0] & (1 << 16)) != 0:
-            #     dummy = int(FSTAT[0])  # Force re-read each loop
-            #     # pass
-            # while ((FLEVEL[0] >> 8) & 0xF) == 0 and ((FLEVEL[0]) & 0xF) == 0:
-            #     print(FSTAT, FLEVEL)
-                # pass
-
-            # flevel:int = FLEVEL[0]
-            # while ((flevel >> 4) & 0xF) == 0:
-            #     flevel = FLEVEL[0]
-            while ((FLEVEL[0] >> 4) & 0xF) == 0:
+            while ((FLEVEL[0] >> 4) & 0b_1111) == 0: # busy wait while RX FIFO is empty, RX0[7..4] bits
                 pass
-            x:int = RXF0[0]
-            # x:int       = int(self.sm.get()) # packet contains DATA bus value [31..24], flags [23..16] and ADDRess [15..0]
-            # rd:bool     = (x & 0x08_0000) == 0
-            wr:bool     = (x & 0x10_0000) == 0
-            addr:int    = x & addr_mask
+            x = RXF0[0] # packet contains DATA bus value [31..24], flags [23..16] and ADDRess [15..0]
+            wr      = (x & 0x10_0000) == 0
+            addr    =  x & addr_mask
             if verbose:
                 m1      = (x & 0x01_0000) == 0
                 mreq    = (x & 0x02_0000) == 0
                 rd      = (x & 0x08_0000) == 0
                 halt    = (x & 0x40_0000) == 0
                 value   = (x>>24) & 0xFF
-                # m1      = (x &  0x01) == 0
-                # mreq    = (x &  0x02) == 0
-                # value   = ((x>>16) & 0xFF)
                 print(
                     "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
                     "addr", hex(addr), hex(value) if wr else hex(int(ram[addr])),\
                     hex(x),\
                     "r/t:", self.sm.rx_fifo(), self.sm.tx_fifo())
-            # if rd:
             if wr:
                 value   = (x>>24) & 0xFF
                 ram[addr] = value
-                TXF0[0] = int(0)
-                # self.sm.put(0) # dummy packet                
+                TXF0[0] = int(0) # dummy packet
             else:
                 value_from_ram = ram[addr]
                 write_packet = (value_from_ram << 8) | 0x00_00_FF
@@ -418,8 +389,8 @@ class Z80PIO:
                 #                                                 # 3) 0x00 sets PICO pindirs back to read
                 # reads += 1
                 # self.sm.put(0) # dummy packet
-    
-                halt:bool   = (x & 0x40_0000) == 0
+
+                halt   = (x & 0x40_0000) == 0
                 if halt:
                     flags       = (x>>16) & 0xFF
                     return addr, 0x100-flags
