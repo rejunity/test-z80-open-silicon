@@ -7,7 +7,20 @@ log = logging.getLogger(__name__)
 def wait_clocks(num:int=1):
     for _i in range(num):
         time.sleep_us(1)
+# Many thanks to Mike Bell, Pat Deegan and Uri Shaked for code examples and optimisation tips!
+# With their help effective Z80 speed went from 300 KHz to 4 MHz.
 
+# With Z80PIO class Z80 core frequency 4_000_000 (ceiling is around 4_020_000) is possible
+#   if RP2040 is overcloked to 266_000_000
+#
+# Z80 address/control multiplexor response delay seems to be somewhere around 32.1 .. 24.1 MHz
+# This assesment is based on observation that PIO running 96.48 MHz
+# 4 cyles of delay is necessary between onset of the MUX pin and reading the correct value back from Z80.
+#
+# Effective measured speed for reads (NOP): 3.931MHz            -- demo.exec("", freq=4_000_000)
+# Effective measured speed for writes (PUSH HL): of 3.647MHz    -- demo.exec("push", freq=4_000_000) 
+#
+# NOTE: by removing "if verbose" branch in Z80PIO _run() are slightly faster speed is possible!
 
 from machine import Pin
 import rp2
@@ -307,49 +320,6 @@ class Z80PIO:
     def run(self, ram, addr_mask:int=0xFFFF, verbose:bool=False):
         return self._run(ram, addr_mask, verbose)
 
-# rd, halt in body
-#
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 19213000ns assuming 16K nops = 3.358MHz !
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("push", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 56730000ns assuming 16K push hl = 3.127MHz !
-
-# rd, halt in the branches
-#
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 17395000ns assuming 16K nops = 3.709MHz !
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("push", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 51516000ns assuming 16K push hl = 3.444MHz !
-
-# no explicit types
-#
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 17395000ns assuming 16K nops = 3.709MHz !
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("push", freq=3_500_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 51516000ns assuming 16K push hl = 3.444MHz !
-
-# slightly longer delay on the first intruction allows to up frequency to 4_000_000 (ceiling is around 4_020_000)
-#
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("/hello.com", freq=4_000_000)
-# Z80 Hello world... Z80!
-# Program finished execution in 5792000ns 
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("", freq=4_000_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 16362000ns assuming 16K nops = 3.943MHz !
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("push", freq=4_000_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 48542000ns assuming 16K push hl = 3.655MHz !
-
-
-# without verbose branch
-#
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("/hello.com", freq=4_000_000)
-# Z80 Hello world... Z80!
-# Program finished execution in 5704000ns 
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("", freq=4_000_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 15999000ns assuming 16K nops = 4.032MHz !
-# >>> import examples.tt_um_rejunity_z80.demo as demo; demo.exec("push", freq=4_000_000, pio_cycles_per_z80_cycle=24)
-# Program finished execution in 47447000ns assuming 16K push hl = 3.739MHz !
-
-# 96.48 MHz / 3 .. 4 cyles delay ~~ 32.1 .. 24.1 MHz MUX delay
 
     @micropython.viper
     def _run(self, ram:ptr8, addr_mask:int=0xFFFF, verbose:bool=False):
