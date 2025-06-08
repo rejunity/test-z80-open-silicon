@@ -172,9 +172,10 @@ class Z80PIO:
         # reads:int = 0
         # writes:int = 0
         execution_reached_past_addr_0:bool = False
-        FLEVEL  = ptr32(0x5020000C)
-        TXF0    = ptr32(0x50200010)
-        RXF0    = ptr32(0x50200020)
+        #               0x50200000 is PIO0 base address
+        FLEVEL  = ptr32(0x5020000C) # FIFO levels, TX0 is [3..0] and RX0 is [7..4]
+        TXF0    = ptr32(0x50200010) # TX FIFO
+        RXF0    = ptr32(0x50200020) # RX FIFO
         while True:
             while ((FLEVEL[0] >> 4) & 0b_1111) == 0: # busy wait while RX FIFO is empty, RX0[7..4] bits
                 pass
