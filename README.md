@@ -6,6 +6,14 @@ This is a testing code for [FOSS Z80 silicon](https://github.com/rejunity/z80-op
   <img width="200" src="./assets/z80-hello-world.gif"/>
 </p>
 
+## STATUS
+
+* Z80 on Tiny Tapeout 07 works **succesfully** at a nominal **4 MHz** _with RP2040 emulating the RAM_.
+* 3 test **undocumented** flag tests from ZEXALL test suite fail: `CPD<r>`, `CPI<r>` and `DAA/CPL/SCF/CCF`.
+<p align="center">
+  <img width="200" src="./assets/zexall-results-tt07.png"/>
+</p>
+
 
 ## Requirements
 
@@ -48,7 +56,13 @@ demo.exec("/hello.com")
 
 ## ZEXALL thorough instruction test suite
 
-To load (a subset) of a Z80 Instruction Set Exerciser, type:
+To run the whole Z80 Instruction Set Exerciser including undocumented flags, type:
+```
+demo.exec("/zexall.com", freq=3_500_000)
+```
+_Note that test takes around **3.5 hours** to complete!_
+
+To run a faster and smaller subset of a Z80 Instruction Set Exerciser, type:
 ```
 demo.exec("/zexsmall.com")
 ```
