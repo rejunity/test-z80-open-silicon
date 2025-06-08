@@ -74,14 +74,15 @@ demo.exec("/zexsmall.com")
 - [x] **RAM test**, RAM emulated by RP2040
 - [x] **Hello world** printed to the console, tiny CP/M environment emulated by RP2040
 - [ ] Small program (fibonaci sequence?)
-- [ ] Exhaustive instruction set test [ZEXALL](https://github.com/agn453/ZEXALL)
+- [x] **PASSES, except 3 tests** Exhaustive instruction set test [ZEXALL](https://github.com/agn453/ZEXALL)
   - [x] Minimal CP/M environment emulated by RP2040, for inspiration: https://github.com/anotherlin/z80emu
   - [x] Intercept `CALL $0005`, write `C`, `DE` registers to RAM at `0..2`
   - [x] Intercept `JP $0000` when test is finished
   - [x] 16KB is enough to load and execute ZEXALL, if stack is placed at the top `LD SP, $0000`
   - [x] PIO MircoPython to read DATA and ADDR buses, reaches 400 KHz (still too slow to be practical for ZEXALL)
+  - [x] Optimise PIO MircoPython to reach 4 MHz
   - [x] Compiled a smaller subset of instructions ZEXSMALL
-- [ ] Run Z80Prelim test from the ZEXALL package 
+- [ ] Run Z80Prelim test from the ZEXALL package
 
 ### External Hardware
 - [ ] External ROM test
