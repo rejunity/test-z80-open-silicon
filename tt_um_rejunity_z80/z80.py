@@ -1,12 +1,13 @@
 from ttboard.demoboard import DemoBoard, Pins
 
+from machine import Pin
+import rp2
+from rp2 import PIO
+
 import ttboard.util.time as time
 import ttboard.log as logging
 log = logging.getLogger(__name__)
 
-def wait_clocks(num:int=1):
-    for _i in range(num):
-        time.sleep_us(1)
 # Many thanks to Mike Bell, Pat Deegan and Uri Shaked for code examples and optimisation tips!
 # With their help effective Z80 speed went from 300 KHz to 4 MHz.
 
@@ -22,9 +23,6 @@ def wait_clocks(num:int=1):
 #
 # NOTE: by removing "if verbose" branch in Z80PIO _run() are slightly faster speed is possible!
 
-from machine import Pin
-import rp2
-from rp2 import PIO
 
 # Pin layout and mapping between TT Z80 and Pico / PIO ##################################################
 # Based on: https://github.com/TinyTapeout/tt-micropython-firmware/blob/main/src/ttboard/pins/gpio_map.py
@@ -257,6 +255,10 @@ class Z80PIO:
     # def BUSRQ(self, flag:bool):
     #     self._busrq = flag
     #     self._update_cpu_ctrl()
+
+def wait_clocks(num:int=1):
+    for _i in range(num):
+        time.sleep_us(1)
 
 class Z80:
     '''
