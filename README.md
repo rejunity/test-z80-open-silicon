@@ -11,7 +11,7 @@ This is a testing code for [FOSS Z80 silicon](https://github.com/rejunity/z80-op
 * Z80 on Tiny Tapeout 07 works **succesfully** at a nominal **4 MHz** _with RP2040 emulating the RAM_.
 * 3 test **undocumented** flag tests from ZEXALL test suite fail: `CPD<r>`, `CPI<r>` and `DAA/CPL/SCF/CCF`.
 <p align="center">
-  <img width="200" src="./assets/zexall-results-tt07.png"/>
+  <img width="300" src="./assets/zexall-results-tt07.png"/>
 </p>
 
 
