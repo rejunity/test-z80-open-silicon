@@ -141,14 +141,6 @@ class Z80PIO:
         self._nmi = 0
         self._busrq = 0
 
-        # self.sm = rp2.StateMachine(0, z80handler, 
-        # self.sm = rp2.StateMachine(0, z80_readwrite_handler2, 
-        #     freq=chip_frequency,
-        #     jmp_pin=     tt.pins.uo_out3.raw_pin,   # jumps on /RD signal
-        #     in_base=     tt.pins.uo_out0.raw_pin,   # reads     CTRL signals and ADDR bus
-        #     set_base=    tt.pins.ui_in0.raw_pin,    # sets      CTRL signals (WAIT) ???, INT, NMI, BUSREQ) 
-        #     sideset_base=tt.pins.ui_in6.raw_pin,    # sets      MUX
-        #     out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
 
         tt.ui_in[3:0] = 0b1111 # /WAIT
         self.sm = rp2.StateMachine(0, z80_clocking_handler,
@@ -169,8 +161,6 @@ class Z80PIO:
 
     @micropython.viper
     def _run(self, ram:ptr8, addr_mask:int=0xFFFF, verbose:bool=False):
-        # reads:int = 0
-        # writes:int = 0
         execution_reached_past_addr_0:bool = False
         #               0x50200000 is PIO0 base address
         FLEVEL  = ptr32(0x5020000C) # FIFO levels, TX0 is [3..0] and RX0 is [7..4]
@@ -219,43 +209,6 @@ class Z80PIO:
 
             execution_reached_past_addr_0 = addr > 0
 
-            # if reads % 16384 == 0:
-            #     print(reads)
-
-    # def _update_cpu_ctrl():
-    #     sm.exec(f"set(pins, 0b{1-self._busrq}{1-self._nmi}{1-self._int}{1-self._wait})")
-
-    # @property
-    # def WAIT(self):
-    #     return self._wait
-    # @WAIT.setter 
-    # def WAIT(self, flag:bool):
-    #     self._wait = flag
-    #     self._update_cpu_ctrl()
-
-    # @property
-    # def INT(self):
-    #     return self._int
-    # @INT.setter 
-    # def INT(self, flag:bool):
-    #     self._int = flag
-    #     self._update_cpu_ctrl()
-
-    # @property
-    # def NMI(self):
-    #     return self._nmi
-    # @NMI.setter 
-    # def NMI(self, flag:bool):
-    #     self._nmi = flag
-    #     self._update_cpu_ctrl()
-
-    # @property
-    # def BUSRQ(self):
-    #     return self._busrq
-    # @BUSRQ.setter 
-    # def BUSRQ(self, flag:bool):
-    #     self._busrq = flag
-    #     self._update_cpu_ctrl()
 
 def wait_clocks(num:int=1):
     for _i in range(num):
