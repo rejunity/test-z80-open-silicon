@@ -44,13 +44,13 @@ from rp2 import PIO
 # -> Z80 in |    data-in    |  MUX  |       |b n I W|       |         |            W:/WAIT I:/INT n:/NMI b:/BUSRQ
 # - - - - - | - - - - - - - | - - - | - - - - - - - | - - - | - - - - |
 #TinyTapeout|     8 uio     | 4 ui  | 4 uo  | 4 ui  | 4 uo  |      clk|
-#   pin#    |7 6 5 4 3 2 1 0|7 6 . .|7 6 5 4|3 2 1 0|3 2 1 0|         |
+#    pin    |7 6 5 4 3 2 1 0|7 6 . .|7 6 5 4|3 2 1 0|3 2 1 0|         |
 # - - - - - | - - - - - - - | - - - | - - - - - - - | - - - | - - - - |
 # Z80 -> out|    data-out   |       |addr_lo|       |addr_lo|         | (MUX=00..)
 #           |    ---//---   |       |addr_hi|       |addr_hi|         | (MUX=01..)
 #           |    ---//---   |       |b H f W|       |R I M 1|         | (MUX=1x..) 1:/M1 M:/MREQ I:/IORQ R:/RD _ W:/WR f:/RFSH: H:/HALT b:/BUSAK
 # ----------+---------------+-------+-------+-------+-------+---------+
-# Pico pins |8 7 6 5 4 3 2 1|0 9 . .|6 5 4 3|2 1 0 9|8|7 6 5|. . . . 0|
+# Pico pin  |8 7 6 5 4 3 2 1|0 9 . .|6 5 4 3|2 1 0 9|8|7 6 5|. . . . 0|
 # PIO ctrl  |      out      | side  |               |j|     |   set   |
 #           |               |       |               |m|     |         |
 #           |               |       |               |p|     |         |
@@ -201,6 +201,8 @@ from rp2 import PIO
 #     wait(1, pin, 3)             .side(0b10)         # wait until RD finishes
 #     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode 
 
+# Many thanks to Mike Bell, Pat Deegan and Uri Shaked for code examples and tips!
+# With their help effective Z80 speed went from 300 KHz to 4 MHz.
 
 @rp2.asm_pio(autopull=False, autopush=False, 
              out_shiftdir=PIO.SHIFT_RIGHT, fifo_join=rp2.PIO.JOIN_NONE,
@@ -209,91 +211,58 @@ from rp2 import PIO
              set_init=(PIO.OUT_HIGH,)*1,
              out_init=(PIO.OUT_LOW,)*8)
 def z80_clocking_handler():
-    label("new_clock")
-    ################################################# Detect if READ or WRITE is happening
+    label("new_clock") ############################## Detect if READ or WRITE is happening
                                 # mux:CTRL          #
-    set(pins, 1)                .side(0b10).delay(2) # CLK poesedge __/^^
-    jmp(pin, "not_rd")          .side(0b10)         # detect READs: /RD pin is inverted
+    set(pins, 1)                .side(0b10).delay(3)#   CLK poesedge __/^^
+    jmp(pin, "not_rd")          .side(0b10)         #   detect READ=RD; note /RD pin is inverted
     jmp("read")                 .side(0b10)
 
     label("not_rd")
-    in_(pins, 2)                .side(0b10)         # detect WRITEs: ~M1 && MREQ; /M1, /MREQ pins are inverted
+    in_(pins, 2)                .side(0b10)         #   detect WRITE=(~M1 && MREQ); note /M1 /MREQ pins are inverted
     mov(x, isr)                 .side(0b10)
-    mov(isr, null)              .side(0b10)         # clear ISR!
-    # set(y, 0b01) # TODO: support for IORQ+WR and IORQ+M1
-    #              # currently sensitive only to:     1) RD|*
-    #              #                                  2) (notRD)|MREQ|(notM1)
-    #              # missing:                         *) (notRD)|IORQ    
-    jmp(x_not_y, "clock_ph2")   .side(0b10)         # if neither READ or WRITE happened, jump to finish the 2nd phase of the clock cycle
+    mov(isr, null)              .side(0b10)         #   clear ISR!
+    jmp(x_not_y, "clock_ph2")   .side(0b10)         #   if neither READ or WRITE happened,
+                                                    #   jump straigt to the 2nd phase of the clock cycle
 
-    ################################################# To process READ or WRITE we will push 2 and pop 1 packet, see run()
-    label("write")                                  #
-    label("read")               # mux:CTRL          #
-    set(pins, 0)                .side(0b10)         # clk negedge  ^^\__
+    label("write") #############           ########## To process READ or WRITE we will push 32bit and pop 24bit block, see run()
+    label("read")                                   #
+    set(pins, 0)                .side(0b10)         #   clk negedge  ^^\__
                                                     #
-    mov(osr, pins)              .side(0b10)         # 
-    out(null, 16)               .side(0b10)         # 
-    in_(osr, 8)                 .side(0b10)         # ISR={value}
-    mov(osr, pins)              .side(0b10)         # 
-    out(null, 8)                .side(0b10)         # 
-    in_(osr, 4)                 .side(0b10)         # ISR={value, flags_bHfW}
-    in_(pins, 4)                .side(0b01).delay(3)         # ISR={value, flags_bHfW, flags_RIM1}
+    mov(osr, pins)              .side(0b10)         #   use OSR register to skip (shift out of the register) ui_io nibbles
+    out(null, 16)               .side(0b10)         #   OSR <= pins >> 16; ISR <= OSR[7..0]
+    in_(osr, 8)                 .side(0b10)         #   ISR <= {value}
+    mov(osr, pins)              .side(0b10)         #
+    out(null, 8)                .side(0b10)         #
+    in_(osr, 4)                 .side(0b10)         #   ISR <= {data_8bit, flags_only_bHfW_4bit}
+    in_(pins, 4)                .side(0b01).delay(3)#   ISR <= {data_8bit, flags_8bit}
                                 # mux:ADDR_HI       #
-    # nop()                       .side(0b01).delay(3)#   wait for mux to stabilize
-    mov(osr, pins)              .side(0b01)         # 
-    out(null, 8)                .side(0b01)         # 
-    in_(osr, 4)                 .side(0b01)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi_4bit}
-    in_(pins, 4)                .side(0b00).delay(3)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi}
+    mov(osr, pins)              .side(0b01)         #
+    out(null, 8)                .side(0b01)         #
+    in_(osr, 4)                 .side(0b01)         #   ISR <= {data_8bit, flags_8bit, addr_upper__4bit}
+    in_(pins, 4)                .side(0b00).delay(3)#   ISR <= {data_8bit, flags_8bit, addr_upper__8bit}
                                 # mux:ADDR_LO       #
-    # nop()                       .side(0b00).delay(3)#
     mov(osr, pins)              .side(0b00)         #
     out(null, 8)                .side(0b00)         #
-    in_(osr, 4)                 .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo_4bit}
-    in_(pins, 4)                .side(0b00)         # ISR={value, flags_bHfW, flags_RIM1, addr_hi, addr_lo}
-    push(block)                 .side(0b10)         #   PUSH packet #2: ADDRess bus
+    in_(osr, 4)                 .side(0b00)         #   ISR <= {data_8bit, flags_8bit, addr_upper_12bit}
+    in_(pins, 4)                .side(0b00)         #   ISR <= {data_8bit, flags_8bit, addr_all___16bit} {31..0}
+    push(block)                 .side(0b10)         #   PUSH contents of ISR to CPU
                                                     #
                                 # mux:CTRL          #
-    pull(block)                 .side(0b10)         #   WAIT for packet from RAM to arrive, see run()
-    ### jmp(pin, "new_clock")       .side(0b10)         # WRITE ends here
+    pull(block)                 .side(0b10)         #   WAIT for packet with RAM contents to arrive, see run()
+    # jmp(pin, "new_clock")       .side(0b10)       #   WRITE ends here
 
     out(pindirs, 8)                                 #   switch PICO pins that are connected to Z80 DATA bus into WRITE mode 
     out(pins, 8)                                    #   put RAM value on the Z80 DATA bus
                                                     #   and hold results for 1 more clock cycle
 
+    #################################################
     set(pins, 1)                .delay(3)           # CLK poesedge __/^^
-    # nop()                       .delay(3)
-    # nop()                       .delay(3)
-
-    label("clock_ph2")
+    
+    label("clock_ph2") ##############################
     set(pins, 0)                .delay(2)           # clk negedge  ^^\__
-    # nop()                       .delay(3)
-    # nop()                       .delay(3)
-
     out(pindirs, 8)             .side(0b10)         # restore PICO pins back to READ mode
                                                     # READ ends here
 
-
-    # Below is the code I was learning from by Mike Bell and Pat Deegan
-    # # This does work with a statemachine 
-    # # freq of 2MHz... from uPython, we can set registers with 
-    # # this in about 40us (down from close to 8 milliseconds!)
-    # # any issues, easiest fixes are to just reduce the freq=
-    # # in the SM below, see if that resolves things
-    # out(isr, 8)         .side(0)                                    OSR => ISR, OSR >> 8
-    # in_(isr, 4)         .side(0b11)                                 ISR => ISR, ISR << 4
-    # mov(pins, isr)      .side(0b11)                                 ISR => pins
-    # out(isr, 8)         .side(0)                                    OSR => ISR, OSR >> 8
-    # in_(isr, 4)         .side(0b10)                                 ISR => ISR, ISR << 4
-    # mov(pins, isr)      .side(0b10).delay(3)                        ISR => pins
-
-    #              7ui4 7uo4 3ui0 3uo0
-    # 0     :ISR  [...._...._...._....]    OSR: [VVVV_vvvv_RRRR_rrrr]
-    # 1(out):ISR  [0000_0000_RRRR_rrrr]    OSR: [...._...._VVVV_vvvv]
-    # 2(in_):ISR  [0000_RRRR_rrrr_rrrr]
-    # 3(mov):pins [0000_RRRR_rrrr_rrrr]
-    # 4(out):ISR  [0000_0000_VVVV_vvvv]
-    # 5(in_):ISR  [0000_VVVV_vvvv_vvvv]
-    # 6(mov):pins [0000_VVVV_vvvv_vvvv]
 
 class Z80PIO:
     '''
