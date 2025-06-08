@@ -133,16 +133,15 @@ class Z80PIO:
         # tt.uio_oe_pico.value = 255 # DATA bus on the Z80 side is set to read, PICO side is set to write
         tt.uio_oe_pico.value = 0
         tt.uio_in = 0 # NOP instruction by default
-        tt.ui_in[3:0] = 0b1110 # /WAIT
-        tt.ui_in[7:4] = 0
-        
+        self.tt.ui_in = 0b0000_1111 # set /WAIT, /INT, /NMI, /BUSRQ (inverted)
         self._wait = 0
         self._int = 0
         self._nmi = 0
         self._busrq = 0
+        self._flags = 0
+        self._addr = 0
+        self._data = 0
 
-
-        tt.ui_in[3:0] = 0b1111 # /WAIT
         self.sm = rp2.StateMachine(0, z80_clocking_handler,
             freq=chip_frequency,
             jmp_pin=     tt.pins.uo_out3.raw_pin,   # jumps on /RD signal
@@ -151,13 +150,11 @@ class Z80PIO:
             sideset_base=tt.pins.ui_in6.raw_pin,    # sets      MUX
             out_base=    tt.pins.uio0.raw_pin)      # writes to DATA bus
 
-
         self.sm.exec("set(y, 0b01)")
         self.sm.active(True)
 
     def run(self, ram, addr_mask:int=0xFFFF, verbose:bool=False):
         return self._run(ram, addr_mask, verbose)
-
 
     @micropython.viper
     def _run(self, ram:ptr8, addr_mask:int=0xFFFF, verbose:bool=False):
@@ -173,16 +170,11 @@ class Z80PIO:
             wr      = (x & 0x10_0000) == 0
             addr    =  x & addr_mask
             if verbose:
-                m1      = (x & 0x01_0000) == 0
-                mreq    = (x & 0x02_0000) == 0
-                rd      = (x & 0x08_0000) == 0
-                halt    = (x & 0x40_0000) == 0
                 value   = (x>>24) & 0xFF
-                print(
-                    "m1" if m1 else "  ", "mr" if mreq else "  ", "rd" if rd else "  ", "wr" if wr else "  ", "halt" if halt else "    ",\
-                    "addr", hex(addr), hex(value) if wr else hex(int(ram[addr])),\
-                    hex(x),\
-                    "r/t:", self.sm.rx_fifo(), self.sm.tx_fifo())
+                self._data  = value if wr else int(ram[addr])
+                self._addr  = addr
+                self._flags = ~(uint(x)>>16 & 0xFF)
+                self.dump(f".. sm packet:{uint(x):08x} fifo r/t: {self.sm.rx_fifo()} / {self.sm.tx_fifo()}")
             if wr:
                 value   = (x>>24) & 0xFF
                 ram[addr] = value
@@ -191,23 +183,99 @@ class Z80PIO:
                 value_from_ram = ram[addr]
                 write_packet = (value_from_ram << 8) | 0x00_00_FF
                 TXF0[0] = write_packet
-                # self.sm.put((value_from_ram << 8) | 0x00_00_FF) # 1) 0xFF sets PICO pindirs to write
-                #                                                 # 2) PICO puts byte from RAM on Z80's data bus
-                #                                                 # 3) 0x00 sets PICO pindirs back to read
-                # reads += 1
-                # self.sm.put(0) # dummy packet
 
-                halt   = (x & 0x40_0000) == 0
+                halt    = (x & 0x40_0000) == 0
                 if halt:
-                    flags       = (x>>16) & 0xFF
-                    return addr, 0x100-flags
+                    self._data  = ram[addr]
+                    self._addr  = addr
+                    self._flags = 0x100-((x>>16) & 0xFF)
+                    return self._addr, self._flags
 
             if addr == 0:
-                flags       = (x>>16) & 0xFF
                 if execution_reached_past_addr_0:
-                    return addr, 0x100-flags
+                    self._data  = ram[addr]
+                    self._addr  = addr
+                    self._flags = 0x100-((x>>16) & 0xFF)
+                    return self._addr, self._flags
 
             execution_reached_past_addr_0 = addr > 0
+
+    def dump(self, pio=""):
+        addr  = f"ADDR:{self.addr:04x}"
+        data  = f"DATA:{self.data:02x}"
+        m1    = "m1" if self.M1 else "  "
+        mreq  = "mr" if self.MREQ else "  "
+        iorq  = "io" if self.IORQ else "  "
+        rd    = "rd" if self.RD else "  "
+        wr    = "wr" if self.WR else "  "
+        halt  = "h" if self.HALT else " "
+        rfsh  = "r" if self.RFSH else " "
+        busak = "b" if self.BUSAK else " "
+        ddir  = "<-" if self.WR else "->"
+        print(m1, mreq, iorq, rd, wr, halt, rfsh, busak, addr, ddir, data, pio)
+
+    @property
+    def WAIT(self):
+        return self._wait
+    @WAIT.setter 
+    def WAIT(self, flag:bool):
+        self.tt.ui_in[0] = not flag
+        self._wait = flag
+
+    @property
+    def INT(self):
+        return self._int
+    @INT.setter 
+    def INT(self, flag:bool):
+        self.tt.ui_in[1] = not flag
+        self._int = flag
+
+    @property
+    def NMI(self):
+        return self._nmi
+    @NMI.setter 
+    def NMI(self, flag:bool):
+        self.tt.ui_in[2] = not flag
+        self._nmi = flag
+
+    @property
+    def BUSRQ(self):
+        return self._busrq
+    @BUSRQ.setter 
+    def BUSRQ(self, flag:bool):
+        self.tt.ui_in[3] = not flag
+        self._busrq = flag
+
+    @property
+    def addr(self):
+        return self._addr
+    @property
+    def data(self):
+        return self._data
+    @property
+    def M1(self):
+        return (self._flags & 0x01) != 0
+    @property
+    def MREQ(self):
+        return (self._flags & 0x02) != 0
+    @property
+    def IORQ(self):
+        return (self._flags & 0x04) != 0
+    @property
+    def RD(self):
+        return (self._flags & 0x08) != 0
+    @property
+    def WR(self):
+        return (self._flags & 0x10) != 0
+    @property
+    def RFSH(self):
+        return (self._flags & 0x20) != 0
+    @property
+    def HALT(self):
+        return (self._flags & 0x40) != 0
+    @property
+    def BUSAK(self):
+        return (self._flags & 0x80) != 0
 
 
 def wait_clocks(num:int=1):
