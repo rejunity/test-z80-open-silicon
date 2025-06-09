@@ -35,6 +35,8 @@ mpremote cp -r programs/*.com :/
 mpremote reset
 ```
 
+If you are getting an error saying `mpremote: 'cp -r' destination must be ':'`, it means you are using an old version of mpremote and need to update it.
+
 ## Run
 
 Connect to MicroPython running on your Tiny Tapeout board from the host machine:
